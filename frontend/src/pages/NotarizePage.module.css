@@ -1,0 +1,142 @@
+.page {
+  max-width:  720px;
+  margin:     0 auto;
+  padding:    2.5rem 0 4rem;
+}
+
+.title {
+  font-family:    var(--font-display);
+  font-size:      2rem;
+  font-weight:    800;
+  letter-spacing: -0.02em;
+  margin-bottom:  0.4rem;
+}
+
+.subtitle {
+  color:         var(--color-text-muted);
+  margin-bottom: 2rem;
+}
+
+/* ─── Dropzone ─────────────────────────────────────────────────────────────── */
+.dropzone {
+  display:         flex;
+  flex-direction:  column;
+  align-items:     center;
+  justify-content: center;
+  gap:             0.75rem;
+  padding:         4rem 2rem;
+  border:          2px dashed var(--color-border);
+  cursor:          pointer;
+  transition:      border-color var(--transition), background var(--transition);
+  text-align:      center;
+}
+
+.dropzone:hover, .dragging {
+  border-color: var(--color-primary);
+  background:   rgba(108, 99, 255, 0.05);
+}
+
+.dropIcon   { font-size: 3rem; }
+.dropText   { font-size: 1.05rem; font-weight: 600; }
+.dropHint   { font-size: 0.85rem; color: var(--color-text-muted); }
+.hashing    { font-size: 0.85rem; color: var(--color-primary-2); margin-top: 0.5rem; }
+
+/* ─── Confirm Card ─────────────────────────────────────────────────────────── */
+.confirmCard { padding: 2rem; }
+
+.fileInfo {
+  display:     flex;
+  align-items: center;
+  gap:         1rem;
+  margin-bottom: 1.5rem;
+}
+
+.fileIcon { font-size: 2.5rem; }
+.fileName { font-weight: 600; word-break: break-all; }
+.fileSize { font-size: 0.85rem; color: var(--color-text-muted); }
+
+.hashBox {
+  background:    var(--color-surface-2);
+  border:        1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding:       1rem;
+  margin-bottom: 1.5rem;
+}
+
+.hashLabel {
+  display:       block;
+  font-size:     0.75rem;
+  font-weight:   600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color:         var(--color-text-muted);
+  margin-bottom: 0.4rem;
+}
+
+.hashValue {
+  font-family: monospace;
+  font-size:   0.8rem;
+  color:       var(--color-accent);
+  word-break:  break-all;
+}
+
+.form { display: flex; flex-direction: column; gap: 1.25rem; }
+
+.actions {
+  display:   flex;
+  gap:       1rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.error {
+  background:    rgba(255, 77, 109, 0.1);
+  border:        1px solid rgba(255, 77, 109, 0.3);
+  border-radius: var(--radius-md);
+  color:         var(--color-danger);
+  padding:       0.75rem 1rem;
+  font-size:     0.9rem;
+}
+
+/* ─── Success Card ─────────────────────────────────────────────────────────── */
+.successCard {
+  padding:        2.5rem;
+  text-align:     center;
+  display:        flex;
+  flex-direction: column;
+  align-items:    center;
+  gap:            1rem;
+}
+
+.successIcon { font-size: 3.5rem; }
+
+.successCard h2 {
+  font-family:    var(--font-display);
+  font-size:      1.8rem;
+  font-weight:    800;
+}
+
+.successSub { color: var(--color-text-muted); }
+
+.txInfo {
+  width:         100%;
+  background:    var(--color-surface-2);
+  border:        1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding:       1rem;
+  margin:        0.5rem 0 1rem;
+}
+
+.txRow {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     flex-start;
+  gap:             1rem;
+  font-size:       0.85rem;
+  padding:         0.4rem 0;
+  border-bottom:   1px solid var(--color-border);
+}
+
+.txRow:last-child { border-bottom: none; }
+.txRow span  { color: var(--color-text-muted); white-space: nowrap; }
+.txRow code  { font-family: monospace; color: var(--color-accent); word-break: break-all; text-align: right; }

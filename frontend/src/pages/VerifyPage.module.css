@@ -1,0 +1,87 @@
+.page {
+  max-width:  680px;
+  margin:     0 auto;
+  padding:    2.5rem 0 4rem;
+}
+
+.title {
+  font-family:    var(--font-display);
+  font-size:      2rem;
+  font-weight:    800;
+  letter-spacing: -0.02em;
+  margin-bottom:  0.4rem;
+}
+
+.subtitle {
+  color:         var(--color-text-muted);
+  margin-bottom: 2rem;
+}
+
+.card { padding: 2rem; }
+
+.tabs {
+  display:       flex;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 1.75rem;
+}
+
+.tab {
+  background:    none;
+  border:        none;
+  cursor:        pointer;
+  padding:       0.6rem 1.2rem;
+  font-size:     0.9rem;
+  font-weight:   500;
+  color:         var(--color-text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition:    all var(--transition);
+  font-family:   var(--font-sans);
+}
+
+.tab:hover  { color: var(--color-text); }
+.tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+
+.form {
+  display:        flex;
+  flex-direction: column;
+  gap:            1.25rem;
+}
+
+.computedHash {
+  font-size:  0.8rem;
+  color:      var(--color-text-muted);
+  margin-top: 0.4rem;
+}
+
+.computedHash code { color: var(--color-accent); font-family: monospace; }
+
+.error {
+  background:    rgba(255, 77, 109, 0.1);
+  border:        1px solid rgba(255, 77, 109, 0.3);
+  border-radius: var(--radius-md);
+  color:         var(--color-danger);
+  padding:       0.75rem 1rem;
+  font-size:     0.9rem;
+  margin-top:    1rem;
+}
+
+.result {
+  display:       flex;
+  align-items:   flex-start;
+  gap:           1rem;
+  padding:       1.25rem;
+  border-radius: var(--radius-md);
+  margin-top:    1.5rem;
+  font-size:     0.9rem;
+  line-height:   1.6;
+}
+
+.result code { font-family: monospace; color: var(--color-accent); word-break: break-all; }
+
+.verified    { background: rgba(0, 212, 167, 0.08); border: 1px solid rgba(0, 212, 167, 0.25); }
+.notVerified { background: rgba(255, 77, 109, 0.08); border: 1px solid rgba(255, 77, 109, 0.25); }
+
+.resultIcon  { font-size: 2rem; flex-shrink: 0; }
+.resultTitle { font-weight: 700; margin-bottom: 0.4rem; }
+.resultSub   { color: var(--color-text-muted); }
