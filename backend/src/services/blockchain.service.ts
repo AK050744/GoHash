@@ -3,8 +3,9 @@ import { getNotaryContract } from '../config/blockchain'
 export interface VerificationResult {
   exists:      boolean
   owner?:      string
+  notary?:     string
   timestamp?:  number
-  description?: string
+  ipfsCid?:    string
 }
 
 export class BlockchainService {
@@ -34,12 +35,14 @@ export class BlockchainService {
     const onChain = await contract.exists(bytes32)
     if (!onChain) return { exists: false }
 
-    const [owner, timestamp, description] = await contract.verify(bytes32)
+    // Day-02 verify() returns: (address owner, address notary, uint256 timestamp, string ipfsCid)
+    const [owner, notary, timestamp, ipfsCid] = await contract.verify(bytes32)
     return {
-      exists:      true,
+      exists:    true,
       owner,
-      timestamp:   Number(timestamp),
-      description,
+      notary,
+      timestamp: Number(timestamp),
+      ipfsCid,
     }
   }
 }

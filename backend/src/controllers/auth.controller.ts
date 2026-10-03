@@ -18,7 +18,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
     const user = await User.create({ name, email, password: hashed })
 
     const token = jwt.sign({ userId: user._id }, env.JWT_SECRET, {
-      expiresIn: env.JWT_EXPIRES_IN,
+      expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
     })
 
     return res.status(201).json({
@@ -47,7 +47,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     }
 
     const token = jwt.sign({ userId: user._id }, env.JWT_SECRET, {
-      expiresIn: env.JWT_EXPIRES_IN,
+      expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
     })
 
     return res.json({

@@ -27,10 +27,13 @@ export async function notarizeDocument(req: Request, res: Response, next: NextFu
     })
 
     // Submit to blockchain
-    const contract = getNotaryContract()
+    // Day-02 contract: notarize(bytes32 hash, string ipfsCid, address owner)
+    const contract    = getNotaryContract()
     const bytes32Hash = documentHash.startsWith('0x') ? documentHash : `0x${documentHash}`
-    const tx = await contract.notarize(bytes32Hash, description || '')
-    const receipt = await tx.wait()
+    const ownerWallet = req.body.ownerAddress || ethers.ZeroAddress
+    const ipfsCid     = req.body.ipfsCid     || ''
+    const tx          = await contract.notarize(bytes32Hash, ipfsCid, ownerWallet)
+    const receipt     = await tx.wait()
 
     // Update DB record with on-chain details
     doc.status      = 'notarized'
@@ -66,7 +69,8 @@ export async function verifyDocument(req: Request, res: Response, next: NextFunc
       return res.status(404).json({ verified: false, message: 'Document not found on blockchain' })
     }
 
-    const [owner, timestamp, description] = await contract.verify(bytes32Hash)
+    // Day-02 verify() returns: (address owner, address notary, uint256 timestamp, string ipfsCid)
+    const [owner, notary, timestamp, ipfsCid] = await contract.verify(bytes32Hash)
 
     // Fetch MongoDB record (optional — may not exist for externally notarized docs)
     const dbRecord = await NotarizedDocument.findOne({ documentHash: hash })
@@ -75,9 +79,10 @@ export async function verifyDocument(req: Request, res: Response, next: NextFunc
       verified: true,
       onChain: {
         owner,
+        notary,
+        ipfsCid,
         timestamp:   Number(timestamp),
         notarizedAt: new Date(Number(timestamp) * 1000).toISOString(),
-        description,
       },
       dbRecord: dbRecord || null,
     })

@@ -3,11 +3,17 @@ import { env } from './env'
 
 // Minimal ABI — only the functions the backend needs to call
 const NOTARY_ABI = [
-  'function notarize(bytes32 documentHash, string calldata description) external',
-  'function verify(bytes32 documentHash) external view returns (address owner, uint256 timestamp, string description)',
+  'function addNotary(address notary) external',
+  'function removeNotary(address notary) external',
+  'function isNotary(address notary) external view returns (bool)',
+  'function notarize(bytes32 documentHash, string calldata ipfsCid, address owner) external',
+  'function getDocument(bytes32 documentHash) external view returns (bytes32, string, address, address, uint256)',
+  'function verify(bytes32 documentHash) external view returns (address owner, address notary, uint256 timestamp, string ipfsCid)',
   'function exists(bytes32 documentHash) external view returns (bool)',
   'function getDocumentsByOwner(address owner) external view returns (bytes32[])',
-  'event DocumentNotarized(bytes32 indexed documentHash, address indexed owner, uint256 timestamp, string description)',
+  'event DocumentNotarized(bytes32 indexed documentHash, string ipfsCid, address indexed owner, address indexed notary, uint256 timestamp)',
+  'event NotaryAdded(address indexed notary, address indexed addedBy)',
+  'event NotaryRemoved(address indexed notary, address indexed removedBy)',
 ]
 
 let _provider: ethers.JsonRpcProvider | null = null

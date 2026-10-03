@@ -113,8 +113,9 @@ export default function VerifyPage() {
                   <div>
                     <p className={styles.resultTitle}>Document is Notarized</p>
                     <p>Owner: <code>{result.onChain?.owner}</code></p>
+                    <p>Notary: <code>{result.onChain?.notary}</code></p>
                     <p>Notarized: {result.onChain?.notarizedAt}</p>
-                    {result.onChain?.description && <p>Description: {result.onChain.description}</p>}
+                    {result.onChain?.ipfsCid && <p>IPFS CID: <code>{result.onChain.ipfsCid}</code></p>}
                   </div>
                 </>
               ) : (

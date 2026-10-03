@@ -44,9 +44,10 @@ export interface VerificationResult {
   verified: boolean
   onChain?: {
     owner:       string
+    notary:      string
     timestamp:   number
     notarizedAt: string
-    description: string
+    ipfsCid:     string
   }
   dbRecord?: NotarizedDocument | null
 }

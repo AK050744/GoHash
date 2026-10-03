@@ -1,10 +1,15 @@
 import { BrowserProvider, Contract } from 'ethers'
 
 const NOTARY_ABI = [
-  'function notarize(bytes32 documentHash, string calldata description) external',
-  'function verify(bytes32 documentHash) external view returns (address owner, uint256 timestamp, string description)',
+  'function addNotary(address notary) external',
+  'function removeNotary(address notary) external',
+  'function isNotary(address notary) external view returns (bool)',
+  'function notarize(bytes32 documentHash, string calldata ipfsCid, address owner) external',
+  'function getDocument(bytes32 documentHash) external view returns (bytes32, string, address, address, uint256)',
+  'function verify(bytes32 documentHash) external view returns (address owner, address notary, uint256 timestamp, string ipfsCid)',
   'function exists(bytes32 documentHash) external view returns (bool)',
   'function getMyDocuments() external view returns (bytes32[])',
+  'function getDocumentsByOwner(address owner) external view returns (bytes32[])',
 ]
 
 export async function getProvider(): Promise<BrowserProvider> {
