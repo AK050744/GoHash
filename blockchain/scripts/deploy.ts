@@ -1,27 +1,39 @@
 import { ethers } from 'hardhat'
 
 async function main() {
-  const [deployer] = await ethers.getSigners()
+  const [deployer, firstNotary] = await ethers.getSigners()
 
-  console.log('Deploying DocumentNotary with account:', deployer.address)
+  console.log('═══════════════════════════════════════════════════════')
+  console.log('  GoHash — DocumentNotary Deployment')
+  console.log('═══════════════════════════════════════════════════════')
+  console.log('Deployer (contract owner):', deployer.address)
   console.log(
-    'Account balance:',
-    (await ethers.provider.getBalance(deployer.address)).toString()
+    'Deployer balance:',
+    ethers.formatEther(await ethers.provider.getBalance(deployer.address)),
+    'ETH'
   )
 
+  // Deploy
   const DocumentNotary = await ethers.getContractFactory('DocumentNotary')
-  const notary = await DocumentNotary.deploy()
-
+  const notary = await DocumentNotary.connect(deployer).deploy()
   await notary.waitForDeployment()
 
   const address = await notary.getAddress()
-  console.log('DocumentNotary deployed to:', address)
-  console.log('')
-  console.log('Update your backend .env with:')
-  console.log(`NOTARY_CONTRACT_ADDRESS=${address}`)
-  console.log('')
-  console.log('Update your frontend .env with:')
-  console.log(`VITE_NOTARY_CONTRACT_ADDRESS=${address}`)
+  console.log('\n✅ DocumentNotary deployed to:', address)
+
+  // On localhost, auto-authorize the second signer as an initial notary
+  // (useful for quick testing — remove or adapt for testnet/mainnet)
+  if (firstNotary) {
+    await notary.connect(deployer).addNotary(firstNotary.address)
+    console.log('✅ Authorized initial notary:', firstNotary.address)
+  }
+
+  console.log('\n─── Environment Variables ─────────────────────────────')
+  console.log('Add these to your backend .env:')
+  console.log(`  NOTARY_CONTRACT_ADDRESS=${address}`)
+  console.log('\nAdd these to your frontend .env:')
+  console.log(`  VITE_NOTARY_CONTRACT_ADDRESS=${address}`)
+  console.log('═══════════════════════════════════════════════════════\n')
 }
 
 main()
