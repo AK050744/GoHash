@@ -3,12 +3,16 @@
   "version": "0.1.0",
   "description": "GoHash Digital Notary — Hardhat Smart Contracts",
   "scripts": {
-    "compile": "hardhat compile",
-    "test": "hardhat test",
-    "node": "hardhat node",
-    "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
-    "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",
-    "clean": "hardhat clean"
+    "compile":          "hardhat compile",
+    "test":             "hardhat test",
+    "test:unit":        "hardhat test test/DocumentNotary.test.ts test/day01/**/*.ts test/day02/**/*.ts",
+    "test:integration": "hardhat test test/integration/DocumentNotary.integration.test.ts",
+    "test:all":         "hardhat test",
+    "node":             "hardhat node",
+    "deploy:local":     "hardhat run scripts/deploy.ts --network localhost",
+    "deploy:local:full":"hardhat run scripts/deploy-local.ts --network localhost",
+    "deploy:sepolia":   "hardhat run scripts/deploy.ts --network sepolia",
+    "clean":            "hardhat clean"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.6",
