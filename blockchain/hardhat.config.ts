@@ -1,5 +1,8 @@
 import { HardhatUserConfig } from 'hardhat/config'
 import '@nomicfoundation/hardhat-toolbox'
+import * as dotenv from 'dotenv'
+
+dotenv.config()
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -39,6 +42,12 @@ const config: HardhatUserConfig = {
     tests: './test',
     cache: './cache',
     artifacts: './artifacts',
+  },
+  // Named accounts — maps role names to signer indices for easy use in scripts and tests
+  namedAccounts: {
+    admin:  { default: 0 },   // Contract owner / deployer
+    notary: { default: 1 },   // First authorized notary
+    user:   { default: 2 },   // Document owner / end user
   },
   typechain: {
     outDir: 'typechain-types',
