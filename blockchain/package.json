@@ -12,6 +12,7 @@
     "deploy:local":     "hardhat run scripts/deploy.ts --network localhost",
     "deploy:local:full":"hardhat run scripts/deploy-local.ts --network localhost",
     "deploy:sepolia":   "hardhat run scripts/deploy.ts --network sepolia",
+    "accounts":         "hardhat run scripts/accounts.ts",
     "clean":            "hardhat clean"
   },
   "devDependencies": {

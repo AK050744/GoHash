@@ -15,7 +15,15 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
-    // Local Hardhat node
+    // In-memory Hardhat network
+    hardhat: {
+      chainId: 31337,
+      accounts: {
+        mnemonic: 'test test test test test test test test test test test junk',
+        count: 20,
+      },
+    },
+    // Local Hardhat node (run via `npx hardhat node`)
     localhost: {
       url: 'http://127.0.0.1:8545',
       chainId: 31337,

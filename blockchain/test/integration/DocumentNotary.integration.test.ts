@@ -26,6 +26,7 @@ import { ethers } from 'hardhat'
 import { anyValue } from '@nomicfoundation/hardhat-chai-matchers/withArgs'
 import { DocumentNotary } from '../../typechain-types'
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers'
+import { TEST_ACCOUNTS } from '../helpers/accounts'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -58,6 +59,32 @@ describe('DocumentNotary — Integration Tests', function () {
     const Factory = await ethers.getContractFactory('DocumentNotary')
     contract = (await Factory.connect(admin).deploy()) as DocumentNotary
     await contract.waitForDeployment()
+  })
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // TEST ACCOUNTS SETUP
+  // ───────────────────────────────────────────────────────────────────────────
+  describe('Test Accounts for Admin, Notary, and User', function () {
+    it('admin signer matches configured test account 0', async () => {
+      expect(admin.address.toLowerCase()).to.equal(TEST_ACCOUNTS.admin.address.toLowerCase())
+    })
+
+    it('notary signer matches configured test account 1', async () => {
+      expect(notary.address.toLowerCase()).to.equal(TEST_ACCOUNTS.notary.address.toLowerCase())
+    })
+
+    it('user signer matches configured test account 2', async () => {
+      expect(user.address.toLowerCase()).to.equal(TEST_ACCOUNTS.user.address.toLowerCase())
+    })
+
+    it('all role signers have positive ETH balance', async () => {
+      const adminBal = await ethers.provider.getBalance(admin.address)
+      const notaryBal = await ethers.provider.getBalance(notary.address)
+      const userBal = await ethers.provider.getBalance(user.address)
+      expect(adminBal).to.be.greaterThan(0n)
+      expect(notaryBal).to.be.greaterThan(0n)
+      expect(userBal).to.be.greaterThan(0n)
+    })
   })
 
   // ───────────────────────────────────────────────────────────────────────────

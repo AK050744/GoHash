@@ -15,6 +15,7 @@
  */
 
 import { ethers } from 'hardhat'
+import { TEST_ACCOUNTS } from '../test/helpers/accounts'
 
 const SEPARATOR = '═'.repeat(57)
 const THIN_SEP  = '─'.repeat(57)
@@ -83,9 +84,11 @@ async function main() {
   console.log('backend/.env')
   console.log(`  NOTARY_CONTRACT_ADDRESS=${contractAddress}`)
   console.log(`  CHAIN_RPC_URL=http://127.0.0.1:8545`)
-  console.log(`  DEPLOYER_PRIVATE_KEY=<hardhat-account-0-private-key>`)
+  console.log(`  DEPLOYER_PRIVATE_KEY=${TEST_ACCOUNTS.admin.privateKey}`)
+  console.log(`  NOTARY_WALLET_ADDRESS=${notary.address}`)
   console.log('\nfrontend/.env')
   console.log(`  VITE_NOTARY_CONTRACT_ADDRESS=${contractAddress}`)
+  console.log(`  VITE_CHAIN_ID=31337`)
   console.log(`${SEPARATOR}\n`)
 }
 
