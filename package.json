@@ -4,14 +4,18 @@
   "description": "GoHash — Blockchain-Based Digital Notary System",
   "private": true,
   "scripts": {
-    "blockchain:compile": "cd blockchain && npx hardhat compile",
-    "blockchain:test":    "cd blockchain && npx hardhat test",
-    "blockchain:test:day01": "cd blockchain && npx hardhat test test/day01/DocumentNotary.day01.test.ts",
-    "blockchain:test:day02": "cd blockchain && npx hardhat test test/day02/DocumentNotary.day02.test.ts",
-    "blockchain:node":   "cd blockchain && npx hardhat node",
-    "blockchain:deploy:local": "cd blockchain && npx hardhat run scripts/deploy.ts --network localhost",
-    "blockchain:deploy:sepolia": "cd blockchain && npx hardhat run scripts/deploy.ts --network sepolia",
-    "backend:dev":  "cd backend && npm run dev",
-    "frontend:dev": "cd frontend && npm run dev"
+    "blockchain:compile":          "cd blockchain && npx hardhat compile",
+    "blockchain:test":             "cd blockchain && npx hardhat test",
+    "blockchain:test:unit":        "cd blockchain && npm run test:unit",
+    "blockchain:test:integration": "cd blockchain && npx hardhat test test/integration/DocumentNotary.integration.test.ts",
+    "blockchain:test:day01":       "cd blockchain && npx hardhat test test/day01/DocumentNotary.day01.test.ts",
+    "blockchain:test:day02":       "cd blockchain && npx hardhat test test/day02/DocumentNotary.day02.test.ts",
+    "blockchain:node":             "cd blockchain && npx hardhat node",
+    "blockchain:accounts":         "cd blockchain && npx hardhat run scripts/accounts.ts",
+    "blockchain:deploy:local":     "cd blockchain && npx hardhat run scripts/deploy.ts --network localhost",
+    "blockchain:deploy:local:full":"cd blockchain && npx hardhat run scripts/deploy-local.ts --network localhost",
+    "blockchain:deploy:sepolia":   "cd blockchain && npx hardhat run scripts/deploy.ts --network sepolia",
+    "backend:dev":                 "cd backend && npm run dev",
+    "frontend:dev":                "cd frontend && npm run dev"
   }
 }
