@@ -5,7 +5,7 @@
   "scripts": {
     "compile":          "hardhat compile",
     "test":             "hardhat test",
-    "test:unit":        "hardhat test test/DocumentNotary.test.ts test/day01/**/*.ts test/day02/**/*.ts",
+    "test:unit":        "hardhat test test/DocumentNotary.test.ts test/day01/DocumentNotary.day01.test.ts test/day02/DocumentNotary.day02.test.ts",
     "test:integration": "hardhat test test/integration/DocumentNotary.integration.test.ts",
     "test:all":         "hardhat test",
     "node":             "hardhat node",
