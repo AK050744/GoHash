@@ -1,52 +1,28 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
 
-/* ─── Base Styles ───────────────────────────────────────────────────────────── */
-:root {
-  color-scheme: dark;
-}
+  html { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
 
-body {
-  margin: 0;
-  padding: 0;
-  background-color: #0a0a0f;
-  color: #ebebf4;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  min-height: 100vh;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  body {
+    @apply bg-surface-950 text-surface-100 antialiased;
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-surface-900; }
+  ::-webkit-scrollbar-thumb { @apply bg-surface-600 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-surface-500; }
 }
 
-/* Custom scrollbar for sleek dark mode aesthetics */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: #0e0e16;
-}
-::-webkit-scrollbar-thumb {
-  background: #26263b;
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #3a3a54;
-}
-
-/* Subtle background glowing grid effect */
-.bg-grid-pattern {
-  background-size: 40px 40px;
-  background-image: 
-    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-}
-
-.glass-panel {
-  background: rgba(18, 18, 26, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+@layer components {
+  .input {
+    @apply w-full bg-surface-900 border border-surface-600 rounded-xl px-4 py-2.5 text-white
+    placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 transition;
+  }
 }

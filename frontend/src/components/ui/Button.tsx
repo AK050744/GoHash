@@ -1,69 +1,41 @@
-import React, { ButtonHTMLAttributes } from 'react'
-import { Spinner } from './Spinner'
+import { ButtonHTMLAttributes, forwardRef } from 'react'
 
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'accent'
-  size?: 'sm' | 'md' | 'lg'
-  isLoading?: boolean
-  leftIcon?: React.ReactNode
-  rightIcon?: React.ReactNode
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
+type Size    = 'sm' | 'md' | 'lg'
+
+interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: Variant
+  size?: Size
+  loading?: boolean
 }
 
-export const Button: React.FC<ButtonProps> = ({
-  children,
-  variant = 'primary',
-  size = 'md',
-  isLoading = false,
-  leftIcon,
-  rightIcon,
-  disabled,
-  className = '',
-  ...props
-}) => {
-  const baseStyles =
-    'relative inline-flex items-center justify-center font-medium rounded-xl transition-all duration-200 select-none focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98]'
+const base = 'inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none'
 
-  const variantStyles = {
-    primary:
-      'bg-primary hover:bg-primary-hover text-white shadow-glow-primary focus:ring-primary border border-primary/20',
-    secondary:
-      'bg-surface-secondary hover:bg-surface-hover text-dark-100 border border-border focus:ring-dark-500',
-    outline:
-      'bg-transparent hover:bg-surface-secondary text-dark-200 hover:text-white border border-border focus:ring-primary',
-    ghost:
-      'bg-transparent hover:bg-surface-hover text-dark-300 hover:text-white focus:ring-dark-500',
-    danger:
-      'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 focus:ring-red-500',
-    accent:
-      'bg-accent hover:bg-accent-hover text-dark-900 font-semibold shadow-glow-accent focus:ring-accent',
-  }
+const variants: Record<Variant, string> = {
+  primary:   'bg-primary-600 hover:bg-primary-700 text-white focus:ring-primary-500',
+  secondary: 'bg-surface-700 hover:bg-surface-600 text-surface-100 focus:ring-surface-500',
+  ghost:     'text-surface-300 hover:text-white hover:bg-surface-700 focus:ring-surface-500',
+  danger:    'bg-red-600 hover:bg-red-700 text-white focus:ring-red-500',
+}
 
-  const sizeStyles = {
-    sm: 'text-xs px-3 py-1.5 gap-1.5',
-    md: 'text-sm px-4.5 py-2.5 gap-2',
-    lg: 'text-base px-6 py-3 gap-2.5',
-  }
+const sizes: Record<Size, string> = {
+  sm: 'px-3 py-1.5 text-sm',
+  md: 'px-5 py-2.5 text-sm',
+  lg: 'px-7 py-3.5 text-base',
+}
 
-  return (
-    <button
-      disabled={disabled || isLoading}
-      className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
-      {...props}
-    >
-      {isLoading ? (
-        <>
-          <Spinner size={size === 'lg' ? 'md' : 'sm'} className="text-current" />
-          <span>Processing...</span>
-        </>
-      ) : (
-        <>
-          {leftIcon && <span className="inline-flex shrink-0">{leftIcon}</span>}
-          {children}
-          {rightIcon && <span className="inline-flex shrink-0">{rightIcon}</span>}
-        </>
+const Button = forwardRef<HTMLButtonElement, Props>(
+  ({ variant = 'primary', size = 'md', loading = false, children, ...rest }, ref) => (
+    <button ref={ref} className={`${base} ${variants[variant]} ${sizes[size]}`} disabled={loading || rest.disabled} {...rest}>
+      {loading && (
+        <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+        </svg>
       )}
+      {children}
     </button>
-  )
-}
-
+  ),
+)
+Button.displayName = 'Button'
 export default Button

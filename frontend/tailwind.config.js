@@ -1,54 +1,33 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
-  darkMode: 'class',
+  content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
-        background: '#0a0a0f',
-        surface: {
-          DEFAULT: '#12121a',
-          secondary: '#181824',
-          hover: '#202030',
-        },
-        border: {
-          DEFAULT: '#26263b',
-          subtle: '#1c1c2b',
-        },
         primary: {
-          DEFAULT: '#6366f1',
-          hover: '#4f46e5',
-          light: '#818cf8',
-          glow: 'rgba(99, 102, 241, 0.25)',
+          300: '#93c5fd',
+          400: '#60a5fa',
+          500: '#3b82f6',
+          600: '#2563eb',
+          700: '#1d4ed8',
         },
-        accent: {
-          DEFAULT: '#00d4a7',
-          hover: '#00b890',
+        surface: {
+          50:  '#f8fafc',
+          100: '#f1f5f9',
+          200: '#e2e8f0',
+          300: '#cbd5e1',
+          400: '#94a3b8',
+          500: '#64748b',
+          600: '#475569',
+          700: '#334155',
+          800: '#1e293b',
+          900: '#0f172a',
+          950: '#080e1a',
         },
-        dark: {
-          900: '#07070b',
-          800: '#0e0e16',
-          700: '#161622',
-          600: '#232336',
-          500: '#3a3a54',
-          400: '#6d6d8f',
-          300: '#9e9ebc',
-          200: '#cdcdde',
-          100: '#ebebf4',
-        }
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        display: ['Space Grotesk', 'sans-serif'],
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
-      boxShadow: {
-        'glow-primary': '0 0 35px -5px rgba(99, 102, 241, 0.3)',
-        'glow-accent': '0 0 35px -5px rgba(0, 212, 167, 0.25)',
-        'card': '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
-      }
     },
   },
   plugins: [],

@@ -1,94 +1,114 @@
-import React from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import {
-  LayoutDashboard,
-  FileCheck2,
-  FolderLock,
-  SearchCheck,
-  Users,
-  ShieldCheck,
-  Activity,
-  History,
-  FileText,
+  LayoutDashboard, FileText, Upload, User, Shield,
+  ClipboardList, Users, LogOut, X,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { UserRole } from '../../types'
 
-interface NavItem {
-  label: string
-  path: string
-  icon: React.ReactNode
-}
+interface Props { open: boolean; onClose: () => void }
 
-export const Sidebar: React.FC<{ onCloseMobile?: () => void }> = ({ onCloseMobile }) => {
-  const { user } = useAuth()
-  const role: UserRole = user?.role || 'USER'
-
-  const linksByRole: Record<UserRole, NavItem[]> = {
-    USER: [
-      { label: 'Overview', path: '/dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
-      { label: 'Notarize Document', path: '/notarize', icon: <FileCheck2 className="w-4 h-4" /> },
-      { label: 'My Documents', path: '/documents', icon: <FolderLock className="w-4 h-4" /> },
-      { label: 'Verify On-Chain', path: '/verify', icon: <SearchCheck className="w-4 h-4" /> },
-    ],
-    NOTARY: [
-      { label: 'Notary Dashboard', path: '/notary/dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
-      { label: 'Pending Requests', path: '/notary/pending', icon: <FileText className="w-4 h-4" /> },
-      { label: 'Attestation History', path: '/notary/history', icon: <History className="w-4 h-4" /> },
-      { label: 'Verify On-Chain', path: '/verify', icon: <SearchCheck className="w-4 h-4" /> },
-    ],
-    ADMIN: [
-      { label: 'Admin Dashboard', path: '/admin/dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
-      { label: 'Authorized Notaries', path: '/admin/notaries', icon: <ShieldCheck className="w-4 h-4" /> },
-      { label: 'User Directory', path: '/admin/users', icon: <Users className="w-4 h-4" /> },
-      { label: 'System Health', path: '/admin/health', icon: <Activity className="w-4 h-4" /> },
-      { label: 'Verify On-Chain', path: '/verify', icon: <SearchCheck className="w-4 h-4" /> },
-    ],
-  }
-
-  const items = linksByRole[role] || linksByRole.USER
-
+function NavItem({ to, icon: Icon, label, onClick }: {
+  to: string; icon: React.ElementType; label: string; onClick?: () => void
+}) {
   return (
-    <aside className="w-64 h-full bg-surface border-r border-border flex flex-col justify-between py-6 px-4">
-      <div>
-        {/* Role Badge Indicator */}
-        <div className="mb-6 px-3 py-2 rounded-xl bg-surface-secondary border border-border flex items-center justify-between">
-          <div>
-            <p className="text-[10px] uppercase font-semibold text-dark-400 tracking-wider">Access Scope</p>
-            <p className="text-xs font-bold text-white tracking-wide">{role} WORKSPACE</p>
-          </div>
-          <span className="w-2 h-2 rounded-full bg-accent animate-ping" />
-        </div>
-
-        {/* Navigation List */}
-        <nav className="space-y-1.5">
-          {items.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              onClick={onCloseMobile}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
-                  isActive
-                    ? 'bg-primary/10 text-primary border border-primary/20 shadow-sm'
-                    : 'text-dark-300 hover:text-white hover:bg-surface-secondary'
-                }`
-              }
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
-        </nav>
-      </div>
-
-      {/* Footer Info in Sidebar */}
-      <div className="px-3 py-3 rounded-xl bg-dark-900/60 border border-border/60 text-center">
-        <p className="text-[11px] text-dark-400">Hardhat Local Node</p>
-        <p className="text-[10px] text-dark-500 font-mono mt-0.5">Chain ID: 31337</p>
-      </div>
-    </aside>
+    <NavLink
+      to={to}
+      onClick={onClick}
+      className={({ isActive }) =>
+        `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
+          isActive
+            ? 'bg-primary-600/20 text-primary-300'
+            : 'text-surface-400 hover:text-white hover:bg-surface-700'
+        }`
+      }
+    >
+      <Icon className="h-4 w-4 flex-shrink-0" />
+      {label}
+    </NavLink>
   )
 }
 
-export default Sidebar
+export default function Sidebar({ open, onClose }: Props) {
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+
+  const doLogout = () => { logout(); navigate('/'); onClose() }
+
+  const userLinks = [
+    { to: '/dashboard',  icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/documents',  icon: FileText,         label: 'My Documents' },
+    { to: '/upload',     icon: Upload,            label: 'Upload' },
+    { to: '/profile',    icon: User,              label: 'Profile' },
+    { to: '/verify',     icon: Shield,            label: 'Verify Doc' },
+  ]
+  const notaryLinks = [
+    { to: '/notary/dashboard',    icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/notary/requests',     icon: ClipboardList,   label: 'Requests' },
+    { to: '/profile',             icon: User,            label: 'Profile' },
+    { to: '/verify',              icon: Shield,          label: 'Verify Doc' },
+  ]
+  const adminLinks = [
+    { to: '/admin/dashboard',  icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/admin/notaries',   icon: Users,           label: 'Notaries' },
+    { to: '/profile',          icon: User,            label: 'Profile' },
+  ]
+
+  const links =
+    user?.role === 'ADMIN'  ? adminLinks  :
+    user?.role === 'NOTARY' ? notaryLinks :
+    userLinks
+
+  return (
+    <>
+      {/* Overlay */}
+      {open && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+          onClick={onClose}
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-64 bg-surface-900 border-r border-surface-700 flex flex-col
+          transition-transform duration-300 lg:static lg:translate-x-0
+          ${open ? 'translate-x-0' : '-translate-x-full'}`}
+      >
+        {/* Header */}
+        <div className="h-16 flex items-center justify-between px-4 border-b border-surface-700">
+          <span className="font-bold text-white text-lg">GoHash</span>
+          <button onClick={onClose} className="lg:hidden text-surface-400 hover:text-white">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* User badge */}
+        {user && (
+          <div className="px-4 py-3 border-b border-surface-700">
+            <p className="text-sm font-semibold text-white truncate">{user.name}</p>
+            <p className="text-xs text-surface-400 truncate">{user.email}</p>
+            <span className="mt-1 inline-block text-[11px] font-medium text-primary-400 bg-primary-600/10 px-2 py-0.5 rounded-full">
+              {user.role}
+            </span>
+          </div>
+        )}
+
+        {/* Nav links */}
+        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+          {links.map(l => (
+            <NavItem key={l.to} {...l} onClick={onClose} />
+          ))}
+        </nav>
+
+        {/* Logout */}
+        <div className="px-3 py-4 border-t border-surface-700">
+          <button
+            onClick={doLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-surface-400 hover:text-red-400 hover:bg-red-500/10 transition-all duration-150"
+          >
+            <LogOut className="h-4 w-4" /> Log out
+          </button>
+        </div>
+      </aside>
+    </>
+  )
+}

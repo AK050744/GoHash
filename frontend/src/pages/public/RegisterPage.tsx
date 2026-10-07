@@ -1,191 +1,101 @@
-import React, { useState } from 'react'
+import { useState, FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Shield, Mail, Lock, User as UserIcon, ArrowRight, CheckCircle2 } from 'lucide-react'
-import { useAuth } from '../../context/AuthContext'
-import { Button } from '../../components/ui/Button'
-import { Alert } from '../../components/ui/Alert'
-import { Card } from '../../components/ui/Card'
+import { Shield } from 'lucide-react'
+import { useAuth, roleDashboard } from '../../context/AuthContext'
+import { ApiError } from '../../lib/api'
+import Button from '../../components/ui/Button'
+import Alert from '../../components/ui/Alert'
 
-export const RegisterPage: React.FC = () => {
+export default function RegisterPage() {
   const { register } = useAuth()
   const navigate = useNavigate()
 
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [name,     setName]            = useState('')
+  const [email,    setEmail]           = useState('')
+  const [password, setPassword]        = useState('')
+  const [confirm,  setConfirm]         = useState('')
+  const [err,      setErr]             = useState('')
+  const [loading,  setLoading]         = useState(false)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault()
-    setErrorMessage(null)
-
-    if (!name.trim()) {
-      setErrorMessage('Full name is required.')
-      return
-    }
-
-    if (password.length < 8) {
-      setErrorMessage('Password must be at least 8 characters long.')
-      return
-    }
-
-    if (password !== confirmPassword) {
-      setErrorMessage('Passwords do not match. Please re-enter.')
-      return
-    }
-
+    setErr('')
+    if (password !== confirm) { setErr('Passwords do not match.'); return }
+    setLoading(true)
     try {
-      setLoading(true)
-      await register({ name, email, password, confirmPassword })
-      // New users are strictly assigned role USER by the backend
-      navigate('/dashboard', { replace: true })
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Registration failed. Please try again.')
+      const user = await register(name, email, password, confirm)
+      navigate(roleDashboard(user.role), { replace: true })
+    } catch (ex) {
+      setErr(ex instanceof ApiError ? ex.message : 'Registration failed. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-grid-pattern relative">
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[300px] bg-accent/10 blur-[130px] rounded-full pointer-events-none" />
+    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md space-y-8">
+        <div className="text-center">
+          <Shield className="h-10 w-10 text-primary-400 mx-auto mb-3" />
+          <h1 className="text-3xl font-extrabold text-white">Create account</h1>
+          <p className="text-surface-400 mt-1 text-sm">Start notarizing in minutes</p>
+        </div>
 
-      {/* Header */}
-      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center z-10">
-        <Link to="/" className="inline-flex items-center gap-2.5 group mb-4">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-dark-900 shadow-glow-primary transition-transform group-hover:scale-105">
-            <Shield className="w-5 h-5 text-dark-900 stroke-[2.5]" />
-          </div>
-          <span className="font-display font-bold text-2xl text-white tracking-tight">GoHash</span>
-        </Link>
-        <h2 className="text-2xl font-bold text-white tracking-tight font-display">Create Your Account</h2>
-        <p className="mt-1.5 text-sm text-dark-400">
-          Start notarizing and certifying documents on Ethereum
-        </p>
-      </div>
+        <div className="bg-surface-800 border border-surface-700 rounded-2xl p-8 shadow-xl">
+          {err && <Alert type="error">{err}</Alert>}
 
-      {/* Form Card */}
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md z-10 px-4 sm:px-0">
-        <Card className="p-8 bg-surface/90 backdrop-blur-xl border-border">
-          {errorMessage && (
-            <Alert
-              type="error"
-              message={errorMessage}
-              onClose={() => setErrorMessage(null)}
-              className="mb-6"
-            />
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Name Field */}
+          <form id="register-form" onSubmit={submit} className="mt-6 space-y-5">
             <div>
-              <label className="block text-xs font-semibold text-dark-300 uppercase tracking-wider mb-1.5">
-                Full Name
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-dark-400">
-                  <UserIcon className="w-4 h-4" />
-                </div>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Jane Doe"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-surface-secondary border border-border text-white text-sm placeholder-dark-500 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
-                />
-              </div>
+              <label htmlFor="register-name" className="block text-sm font-medium text-surface-300 mb-1">Full name</label>
+              <input
+                id="register-name" type="text" autoComplete="name" required
+                value={name} onChange={e => setName(e.target.value)}
+                className="w-full bg-surface-900 border border-surface-600 rounded-xl px-4 py-2.5 text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 transition"
+                placeholder="Jane Doe"
+              />
             </div>
 
-            {/* Email Field */}
             <div>
-              <label className="block text-xs font-semibold text-dark-300 uppercase tracking-wider mb-1.5">
-                Email Address
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-dark-400">
-                  <Mail className="w-4 h-4" />
-                </div>
-                <input
-                  type="email"
-                  required
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="jane@example.com"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-surface-secondary border border-border text-white text-sm placeholder-dark-500 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
-                />
-              </div>
+              <label htmlFor="register-email" className="block text-sm font-medium text-surface-300 mb-1">Email address</label>
+              <input
+                id="register-email" type="email" autoComplete="email" required
+                value={email} onChange={e => setEmail(e.target.value)}
+                className="w-full bg-surface-900 border border-surface-600 rounded-xl px-4 py-2.5 text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 transition"
+                placeholder="you@example.com"
+              />
             </div>
 
-            {/* Password Field */}
             <div>
-              <label className="block text-xs font-semibold text-dark-300 uppercase tracking-wider mb-1.5">
-                Password
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-dark-400">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <input
-                  type="password"
-                  required
-                  minLength={8}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="At least 8 characters"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-surface-secondary border border-border text-white text-sm placeholder-dark-500 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
-                />
-              </div>
+              <label htmlFor="register-password" className="block text-sm font-medium text-surface-300 mb-1">Password</label>
+              <input
+                id="register-password" type="password" autoComplete="new-password" required minLength={8}
+                value={password} onChange={e => setPassword(e.target.value)}
+                className="w-full bg-surface-900 border border-surface-600 rounded-xl px-4 py-2.5 text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 transition"
+                placeholder="Min 8 characters"
+              />
             </div>
 
-            {/* Confirm Password Field */}
             <div>
-              <label className="block text-xs font-semibold text-dark-300 uppercase tracking-wider mb-1.5">
-                Confirm Password
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-dark-400">
-                  <CheckCircle2 className="w-4 h-4" />
-                </div>
-                <input
-                  type="password"
-                  required
-                  minLength={8}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repeat your password"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-surface-secondary border border-border text-white text-sm placeholder-dark-500 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
-                />
-              </div>
+              <label htmlFor="register-confirm" className="block text-sm font-medium text-surface-300 mb-1">Confirm password</label>
+              <input
+                id="register-confirm" type="password" autoComplete="new-password" required
+                value={confirm} onChange={e => setConfirm(e.target.value)}
+                className="w-full bg-surface-900 border border-surface-600 rounded-xl px-4 py-2.5 text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 transition"
+                placeholder="Repeat password"
+              />
             </div>
 
-            {/* Submit Button */}
-            <Button
-              type="submit"
-              variant="primary"
-              size="lg"
-              isLoading={loading}
-              className="w-full mt-4"
-              rightIcon={<ArrowRight className="w-4 h-4" />}
-            >
-              Create Account
+            <Button id="register-submit" type="submit" loading={loading} className="w-full">
+              Create account
             </Button>
           </form>
-        </Card>
+        </div>
 
-        {/* Footer Link */}
-        <p className="text-center text-sm text-dark-400 mt-6">
+        <p className="text-center text-sm text-surface-400">
           Already have an account?{' '}
-          <Link to="/login" className="text-primary hover:text-primary-light font-medium">
-            Sign In
-          </Link>
+          <Link to="/login" className="text-primary-400 hover:text-primary-300 font-medium">Sign in</Link>
         </p>
       </div>
     </div>
   )
 }
-
-export default RegisterPage

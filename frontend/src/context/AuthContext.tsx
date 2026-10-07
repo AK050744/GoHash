@@ -1,86 +1,58 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { User, UserRole, AuthResponse, UserResponse } from '../types'
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from 'react'
 import { api } from '../lib/api'
+import type { User, AuthResponse, MeResponse, UserRole } from '../types'
 
-interface AuthContextType {
+// XSS tradeoff documented in lib/api.ts
+
+interface AuthCtx {
   user: User | null
   token: string | null
-  loadingUser: boolean
-  login: (credentials: { email: string; password: string }) => Promise<User>
-  register: (payload: { name: string; email: string; password: string; confirmPassword: string }) => Promise<User>
+  isLoading: boolean
+  login: (email: string, password: string) => Promise<User>
+  register: (name: string, email: string, password: string, confirmPassword: string) => Promise<User>
   logout: () => void
-  refreshUser: () => Promise<User | null>
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+const Ctx = createContext<AuthCtx | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [token, setToken] = useState<string | null>(() => {
-    // Note on security tradeoff:
-    // Storing JWT in localStorage simplifies client-side state across browser refreshes for SPAs,
-    // but makes the token readable by JavaScript (potential exposure to cross-site scripting/XSS).
-    // In high-security enterprise deployments, httpOnly SameSite cookies with CSRF defense are preferred.
-    // For this decoupled React + REST architecture, localStorage with strict input sanitization is used.
-    return localStorage.getItem('token')
-  })
-  const [loadingUser, setLoadingUser] = useState<boolean>(true)
+  const [user, setUser]         = useState<User | null>(null)
+  const [token, setToken]       = useState<string | null>(() => localStorage.getItem('token'))
+  const [isLoading, setLoading] = useState(true)
 
-  // Hydrate user session on initial application mount if token exists
   useEffect(() => {
-    const initializeAuth = async () => {
-      const storedToken = localStorage.getItem('token')
-      if (!storedToken) {
-        setLoadingUser(false)
-        return
-      }
-
-      try {
-        const response = await api.get<UserResponse>('/auth/me')
-        if (response && response.user) {
-          setUser(response.user)
-          setToken(storedToken)
-        } else {
-          throw new Error('Malformed user payload')
-        }
-      } catch (err) {
-        console.warn('Session restoration failed or token expired:', err)
-        localStorage.removeItem('token')
-        setToken(null)
-        setUser(null)
-      } finally {
-        setLoadingUser(false)
-      }
-    }
-
-    initializeAuth()
+    const stored = localStorage.getItem('token')
+    if (!stored) { setLoading(false); return }
+    api.get<MeResponse>('/auth/me')
+      .then(r => { setUser(r.user); setToken(stored) })
+      .catch(() => { localStorage.removeItem('token'); setToken(null) })
+      .finally(() => setLoading(false))
   }, [])
 
-  const login = async (credentials: { email: string; password: string }): Promise<User> => {
-    const response = await api.post<AuthResponse>('/auth/login', credentials)
-    const { token: receivedToken, user: receivedUser } = response
-
-    localStorage.setItem('token', receivedToken)
-    setToken(receivedToken)
-    setUser(receivedUser)
-
-    return receivedUser
+  const persist = (t: string, u: User) => {
+    localStorage.setItem('token', t)
+    setToken(t)
+    setUser(u)
   }
 
-  const register = async (payload: {
-    name: string
-    email: string
-    password: string
-    confirmPassword: string
-  }): Promise<User> => {
-    const response = await api.post<AuthResponse>('/auth/register', payload)
-    const { token: receivedToken, user: receivedUser } = response
+  const login = async (email: string, password: string): Promise<User> => {
+    const r = await api.post<AuthResponse>('/auth/login', { email, password })
+    persist(r.token, r.user)
+    return r.user
+  }
 
-    localStorage.setItem('token', receivedToken)
-    setToken(receivedToken)
-    setUser(receivedUser)
-
-    return receivedUser
+  const register = async (
+    name: string, email: string, password: string, confirmPassword: string,
+  ): Promise<User> => {
+    const r = await api.post<AuthResponse>('/auth/register', { name, email, password, confirmPassword })
+    persist(r.token, r.user)
+    return r.user
   }
 
   const logout = () => {
@@ -89,55 +61,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
-  const refreshUser = async (): Promise<User | null> => {
-    try {
-      const response = await api.get<UserResponse>('/auth/me')
-      if (response?.user) {
-        setUser(response.user)
-        return response.user
-      }
-      return null
-    } catch {
-      return null
-    }
-  }
-
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        token,
-        loadingUser,
-        login,
-        register,
-        logout,
-        refreshUser,
-      }}
-    >
+    <Ctx.Provider value={{ user, token, isLoading, login, register, logout }}>
       {children}
-    </AuthContext.Provider>
+    </Ctx.Provider>
   )
 }
 
-export function useAuth(): AuthContextType {
-  const context = useContext(AuthContext)
-  if (!context) {
-    throw new Error('useAuth must be used within an <AuthProvider>')
-  }
-  return context
+export function useAuth(): AuthCtx {
+  const c = useContext(Ctx)
+  if (!c) throw new Error('useAuth must be inside AuthProvider')
+  return c
 }
 
-/**
- * Helper to determine default landing dashboard route based on user role
- */
-export function getRoleDashboardPath(role?: UserRole): string {
-  switch (role) {
-    case 'ADMIN':
-      return '/admin/dashboard'
-    case 'NOTARY':
-      return '/notary/dashboard'
-    case 'USER':
-    default:
-      return '/dashboard'
-  }
+export function roleDashboard(role?: UserRole): string {
+  if (role === 'ADMIN')  return '/admin/dashboard'
+  if (role === 'NOTARY') return '/notary/dashboard'
+  return '/dashboard'
 }

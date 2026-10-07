@@ -1,31 +1,14 @@
-import React from 'react'
-import { Card } from './Card'
+import { ReactNode } from 'react'
 
-interface EmptyStateProps {
-  icon: React.ReactNode
-  title: string
-  description: string
-  action?: React.ReactNode
-  className?: string
-}
-
-export const EmptyState: React.FC<EmptyStateProps> = ({
-  icon,
-  title,
-  description,
-  action,
-  className = '',
-}) => {
+export default function EmptyState({ icon, title, description, action }: {
+  icon?: ReactNode; title: string; description?: string; action?: ReactNode
+}) {
   return (
-    <Card className={`text-center py-12 px-6 flex flex-col items-center justify-center ${className}`}>
-      <div className="w-16 h-16 rounded-2xl bg-surface-secondary border border-border flex items-center justify-center text-primary mb-4 shadow-inner">
-        {icon}
-      </div>
-      <h3 className="text-lg font-semibold text-white tracking-tight mb-1.5">{title}</h3>
-      <p className="text-sm text-dark-400 max-w-sm mb-6">{description}</p>
-      {action && <div>{action}</div>}
-    </Card>
+    <div className="flex flex-col items-center justify-center gap-4 py-16 text-center text-surface-400">
+      {icon && <div className="text-5xl">{icon}</div>}
+      <h3 className="text-lg font-semibold text-surface-200">{title}</h3>
+      {description && <p className="text-sm max-w-xs">{description}</p>}
+      {action}
+    </div>
   )
 }
-
-export default EmptyState

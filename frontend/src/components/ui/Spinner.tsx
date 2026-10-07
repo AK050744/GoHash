@@ -1,28 +1,15 @@
-import React from 'react'
+interface Props { size?: 'sm' | 'md' | 'lg' }
+const sizes = { sm: 'h-5 w-5', md: 'h-8 w-8', lg: 'h-12 w-12' }
 
-interface SpinnerProps {
-  size?: 'sm' | 'md' | 'lg'
-  className?: string
-  label?: string
-}
-
-export const Spinner: React.FC<SpinnerProps> = ({ size = 'md', className = '', label }) => {
-  const sizeMap = {
-    sm: 'w-4 h-4 border-2',
-    md: 'w-6 h-6 border-2',
-    lg: 'w-10 h-10 border-3',
-  }
-
+export default function Spinner({ size = 'md' }: Props) {
   return (
-    <div className={`inline-flex items-center gap-2.5 justify-center ${className}`}>
-      <div
-        className={`${sizeMap[size]} rounded-full border-primary/30 border-t-primary animate-spin`}
-        role="status"
-        aria-label={label || 'Loading'}
-      />
-      {label && <span className="text-sm text-dark-300 font-medium">{label}</span>}
-    </div>
+    <svg
+      className={`animate-spin text-primary-400 ${sizes[size]}`}
+      fill="none" viewBox="0 0 24 24"
+      aria-label="Loading"
+    >
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+    </svg>
   )
 }
-
-export default Spinner

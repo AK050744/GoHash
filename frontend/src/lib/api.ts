@@ -1,83 +1,60 @@
-import { ApiError, ApiErrorEnvelope } from '../types'
+import { API_URL } from './env'
 
-const BASE_URL = (
-  import.meta.env.VITE_API_URL ||
-  import.meta.env.VITE_API_BASE_URL ||
-  'http://localhost:5000/api'
-).replace(/\/$/, '')
-
-interface RequestOptions extends Omit<RequestInit, 'body'> {
-  body?: unknown
+// --- Typed API error ---------------------------------------------------------
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
 }
 
-export async function request<T = any>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-  const url = endpoint.startsWith('http') ? endpoint : `${BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`
+// --- Core fetch wrapper ------------------------------------------------------
+// XSS tradeoff: JWT is stored in localStorage so any injected script can read it.
+// httpOnly cookies would remove that risk but require a same-origin or CORS-credentialed
+// setup.  For this project (decoupled Vite SPA + Express API) localStorage is acceptable.
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
+export async function request<T = unknown>(
+  method: Method,
+  path: string,
+  body?: unknown,
+): Promise<T> {
   const token = localStorage.getItem('token')
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
 
-  const headers = new Headers(options.headers || {})
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`)
-  }
-
-  const isJson = options.body && !(options.body instanceof FormData)
-  if (isJson) {
-    headers.set('Content-Type', 'application/json')
-  }
-
-  const config: RequestInit = {
-    ...options,
+  const res = await fetch(`${API_URL}${path}`, {
+    method,
     headers,
-    body: isJson ? JSON.stringify(options.body) : (options.body as BodyInit),
-  }
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
 
-  let response: Response
-  try {
-    response = await fetch(url, config)
-  } catch (networkError: any) {
-    throw new ApiError(0, {
-      code: 'NETWORK_ERROR',
-      message: networkError.message || 'Network request failed. Is the backend server running?',
-    })
-  }
-
+  // Parse envelope (backend always returns JSON)
   let data: any
-  try {
-    data = await response.json()
-  } catch {
-    data = null
-  }
+  try { data = await res.json() } catch { data = {} }
 
-  // Handle HTTP 401 Unauthorized globally
-  if (response.status === 401) {
+  if (res.status === 401) {
     localStorage.removeItem('token')
-    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-      window.location.href = '/login'
+    if (!window.location.pathname.startsWith('/login')) {
+      window.location.replace('/login')
     }
   }
 
-  // Handle error envelope
-  if (!response.ok || (data && data.success === false)) {
-    const errorDetail = (data as ApiErrorEnvelope)?.error || {
-      code: `HTTP_${response.status}`,
-      message: response.statusText || 'An unexpected error occurred',
-    }
-    throw new ApiError(response.status, errorDetail)
+  if (!res.ok || data?.success === false) {
+    const err = data?.error ?? {}
+    throw new ApiError(res.status, err.code ?? 'UNKNOWN', err.message ?? res.statusText)
   }
 
   return data as T
 }
 
 export const api = {
-  get: <T = any>(endpoint: string, options?: RequestOptions) => request<T>(endpoint, { ...options, method: 'GET' }),
-  post: <T = any>(endpoint: string, body?: unknown, options?: RequestOptions) =>
-    request<T>(endpoint, { ...options, method: 'POST', body }),
-  put: <T = any>(endpoint: string, body?: unknown, options?: RequestOptions) =>
-    request<T>(endpoint, { ...options, method: 'PUT', body }),
-  patch: <T = any>(endpoint: string, body?: unknown, options?: RequestOptions) =>
-    request<T>(endpoint, { ...options, method: 'PATCH', body }),
-  delete: <T = any>(endpoint: string, options?: RequestOptions) =>
-    request<T>(endpoint, { ...options, method: 'DELETE' }),
+  get:    <T>(path: string)              => request<T>('GET',    path),
+  post:   <T>(path: string, body: unknown) => request<T>('POST',   path, body),
+  patch:  <T>(path: string, body: unknown) => request<T>('PATCH',  path, body),
+  delete: <T>(path: string)              => request<T>('DELETE', path),
 }
-
-export default api
