@@ -34,8 +34,12 @@ export async function request<T = unknown>(
   })
 
   // Parse envelope (backend always returns JSON)
-  let data: any
-  try { data = await res.json() } catch { data = {} }
+  interface Envelope {
+    success?: boolean
+    error?: { code?: string; message?: string }
+  }
+  let data: (T & Envelope) | null = null
+  try { data = (await res.json()) as T & Envelope } catch { data = null }
 
   if (res.status === 401) {
     localStorage.removeItem('token')

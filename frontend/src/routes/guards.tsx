@@ -16,6 +16,6 @@ export function RoleRoute({ children, roles }: { children: React.ReactNode; role
   const location = useLocation()
   if (isLoading) return <div className="min-h-screen grid place-items-center"><Spinner size="lg" /></div>
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />
-  if (!roles.includes(user.role)) return <Navigate to="/unauthorized" replace />
+  if (!roles.includes(user.role)) return <Navigate to="/403" replace />
   return <>{children}</>
 }

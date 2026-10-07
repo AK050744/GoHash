@@ -36,6 +36,7 @@ export default function AppRoutes() {
         <Route path="/register"    element={<RegisterPage />} />
         <Route path="/verify"      element={<VerifyPage />} />
         <Route path="/unauthorized" element={<UnauthorizedPage />} />
+        <Route path="/403"          element={<UnauthorizedPage />} />
         <Route path="*"            element={<NotFoundPage />} />
       </Route>
 
@@ -54,12 +55,12 @@ export default function AppRoutes() {
 
         {/* NOTARY */}
         <Route path="/notary/dashboard"       element={
-          <RoleRoute roles={['NOTARY', 'ADMIN']}>
+          <RoleRoute roles={['NOTARY']}>
             <NotaryDashboardPage />
           </RoleRoute>
         } />
         <Route path="/notary/requests/:id"   element={
-          <RoleRoute roles={['NOTARY', 'ADMIN']}>
+          <RoleRoute roles={['NOTARY']}>
             <NotaryRequestDetailPage />
           </RoleRoute>
         } />
