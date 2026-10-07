@@ -4,9 +4,12 @@
   "description": "GoHash Digital Notary — Express API",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test:smoke": "tsx scripts/smoke-test.ts",
+    "seed": "tsx scripts/seed.ts",
     "lint": "eslint . --ext .ts"
   },
   "dependencies": {
@@ -16,10 +19,12 @@
     "ethers": "^6.13.1",
     "express": "^4.19.2",
     "express-validator": "^7.1.0",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.4.3",
     "morgan": "^1.10.0",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -32,7 +37,9 @@
     "@typescript-eslint/eslint-plugin": "^7.13.0",
     "@typescript-eslint/parser": "^7.13.0",
     "eslint": "^8.57.0",
+    "mongodb-memory-server": "^11.3.0",
     "ts-node-dev": "^2.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.5.3"
   }
 }

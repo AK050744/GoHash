@@ -1,74 +1,56 @@
-import { Request, Response, NextFunction } from 'express'
-import bcrypt from 'bcryptjs'
-import jwt from 'jsonwebtoken'
-import { User } from '../models/User.model'
-import { env } from '../config/env'
+import { Request, Response } from 'express'
+import { AuthService } from '../services/auth.service'
+import { sendSuccess } from '../utils/response'
+import { asyncHandler } from '../utils/asyncHandler'
+import { ApiError } from '../utils/ApiError'
 
-// ─── POST /api/auth/register ──────────────────────────────────────────────────
-export async function register(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { name, email, password } = req.body
+/**
+ * POST /api/auth/register
+ * Request: { name, email, password, confirmPassword, role? }
+ * Response: 201 { success: true, token, user }
+ */
+export const register = asyncHandler(async (req: Request, res: Response) => {
+  const result = await AuthService.register(req.body)
+  sendSuccess(res, result, 201)
+})
 
-    const existing = await User.findOne({ email })
-    if (existing) {
-      return res.status(409).json({ message: 'Email already in use' })
-    }
+/**
+ * POST /api/auth/login
+ * Request: { email, password }
+ * Response: 200 { success: true, token, user }
+ */
+export const login = asyncHandler(async (req: Request, res: Response) => {
+  const result = await AuthService.login(req.body)
+  sendSuccess(res, result, 200)
+})
 
-    const hashed = await bcrypt.hash(password, 12)
-    const user = await User.create({ name, email, password: hashed })
-
-    const token = jwt.sign({ userId: user._id }, env.JWT_SECRET, {
-      expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
-    })
-
-    return res.status(201).json({
-      message: 'User registered successfully',
-      token,
-      user: { id: user._id, name: user.name, email: user.email },
-    })
-  } catch (err) {
-    next(err)
+/**
+ * GET /api/auth/me
+ * Protected by requireAuth
+ * Response: 200 { success: true, user }
+ */
+export const getMe = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.userId || req.user?.userId
+  if (!userId) {
+    throw ApiError.unauthorized('Authentication required')
   }
-}
 
-// ─── POST /api/auth/login ─────────────────────────────────────────────────────
-export async function login(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { email, password } = req.body
+  const user = await AuthService.getMe(userId)
+  sendSuccess(res, { user }, 200)
+})
 
-    const user = await User.findOne({ email }).select('+password')
-    if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials' })
-    }
-
-    const match = await bcrypt.compare(password, user.password)
-    if (!match) {
-      return res.status(401).json({ message: 'Invalid credentials' })
-    }
-
-    const token = jwt.sign({ userId: user._id }, env.JWT_SECRET, {
-      expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
-    })
-
-    return res.json({
-      message: 'Login successful',
-      token,
-      user: { id: user._id, name: user.name, email: user.email },
-    })
-  } catch (err) {
-    next(err)
+/**
+ * PATCH /api/auth/wallet
+ * Protected by requireAuth
+ * Request: { walletAddress }
+ * Response: 200 { success: true, user }
+ */
+export const updateWallet = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.userId || req.user?.userId
+  if (!userId) {
+    throw ApiError.unauthorized('Authentication required')
   }
-}
 
-// ─── GET /api/auth/me ─────────────────────────────────────────────────────────
-export async function getMe(req: Request, res: Response, next: NextFunction) {
-  try {
-    // req.userId is set by auth middleware
-    const user = await User.findById((req as any).userId)
-    if (!user) return res.status(404).json({ message: 'User not found' })
-
-    return res.json({ user: { id: user._id, name: user.name, email: user.email, walletAddress: user.walletAddress } })
-  } catch (err) {
-    next(err)
-  }
-}
+  const user = await AuthService.updateWallet(userId, req.body.walletAddress)
+  sendSuccess(res, { user }, 200)
+})

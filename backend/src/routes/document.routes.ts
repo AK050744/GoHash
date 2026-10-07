@@ -1,17 +1,15 @@
 import { Router } from 'express'
 import {
-  notarizeDocument,
-  verifyDocument,
-  getMyDocuments,
+  uploadDocument,
+  getDocuments,
   getDocumentById,
 } from '../controllers/document.controller'
-import { authenticate } from '../middlewares/auth.middleware'
 
 const router = Router()
 
-router.post('/notarize',     authenticate, notarizeDocument)
-router.get('/verify/:hash',  verifyDocument)               // public
-router.get('/',              authenticate, getMyDocuments)
-router.get('/:id',           authenticate, getDocumentById)
+// Day 6 endpoints (Stubs returning 501)
+router.post('/upload', uploadDocument)
+router.get('/',        getDocuments)
+router.get('/:id',     getDocumentById)
 
 export default router

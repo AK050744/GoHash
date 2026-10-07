@@ -1,11 +1,23 @@
 import { Router } from 'express'
-import { register, login, getMe } from '../controllers/auth.controller'
-import { authenticate } from '../middlewares/auth.middleware'
+import { register, login, getMe, updateWallet } from '../controllers/auth.controller'
+import { requireAuth, requireRole } from '../middleware/auth.middleware'
+import { validateBody } from '../middleware/validate'
+import { registerSchema, loginSchema, updateWalletSchema } from '../validations/auth.validation'
+import { sendSuccess } from '../utils/response'
 
 const router = Router()
 
-router.post('/register', register)
-router.post('/login',    login)
-router.get('/me',        authenticate, getMe)
+// Public authentication routes
+router.post('/register', validateBody(registerSchema), register)
+router.post('/login', validateBody(loginSchema), login)
+
+// Authenticated user profile routes
+router.get('/me', requireAuth, getMe)
+router.patch('/wallet', requireAuth, validateBody(updateWalletSchema), updateWallet)
+
+// Test RBAC route to verify requireRole('ADMIN') in smoke tests
+router.get('/test-admin', requireAuth, requireRole('ADMIN'), (_req, res) => {
+  sendSuccess(res, { message: 'Admin access confirmed' }, 200)
+})
 
 export default router
