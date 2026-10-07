@@ -1,61 +1,79 @@
-// ─── Auth Types ───────────────────────────────────────────────────────────────
+// ─── User & Auth Types ────────────────────────────────────────────────────────
 
-export interface AuthUser {
-  id:            string
-  name:          string
-  email:         string
-  walletAddress?: string
+export type UserRole = 'USER' | 'NOTARY' | 'ADMIN'
+
+export interface User {
+  id: string
+  name: string
+  email: string
+  role: UserRole
+  walletAddress?: string | null
+  isActive: boolean
+  createdAt?: string
+  updatedAt?: string
 }
 
-export interface AuthState {
-  user:  AuthUser | null
-  token: string | null
+export interface AuthResponse {
+  success: true
+  token: string
+  user: User
 }
 
-// ─── Document Types ───────────────────────────────────────────────────────────
-
-export type DocumentStatus = 'pending' | 'notarized' | 'failed'
-
-export interface NotarizedDocument {
-  _id:          string
-  owner:        string
-  fileName:     string
-  mimeType:     string
-  fileSize:     number
-  documentHash: string
-  description:  string
-  status:       DocumentStatus
-  txHash?:      string
-  blockNumber?: number
-  notarizedAt?: string
-  createdAt:    string
-  updatedAt:    string
+export interface UserResponse {
+  success: true
+  user: User
 }
 
-export interface NotarizePayload {
-  documentHash: string
-  description:  string
-  fileName:     string
-  mimeType:     string
-  fileSize:     number
+// ─── API Envelope Types ───────────────────────────────────────────────────────
+
+export interface ApiSuccessEnvelope<T = unknown> {
+  success: true
+  [key: string]: unknown
 }
 
-export interface VerificationResult {
-  verified: boolean
-  onChain?: {
-    owner:       string
-    notary:      string
-    timestamp:   number
-    notarizedAt: string
-    ipfsCid:     string
+export interface ApiErrorDetail {
+  code: string
+  message: string
+  details?: unknown
+}
+
+export interface ApiErrorEnvelope {
+  success: false
+  error: ApiErrorDetail
+}
+
+export class ApiError extends Error {
+  public code: string
+  public status: number
+  public details?: unknown
+
+  constructor(status: number, error: ApiErrorDetail) {
+    super(error.message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = error.code
+    this.details = error.details
   }
-  dbRecord?: NotarizedDocument | null
 }
 
-// ─── API Response Wrapper ─────────────────────────────────────────────────────
+// ─── Document & Notarization Types ────────────────────────────────────────────
 
-export interface ApiResponse<T = unknown> {
-  message?: string
-  data?:    T
-  error?:   string
+export type DocumentVisibility = 'PRIVATE' | 'PUBLIC'
+export type DocumentStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'NOTARIZED'
+export type NotarizationStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'CONFIRMED' | 'FAILED'
+
+export interface DocumentRecord {
+  _id: string
+  ownerId: string
+  fileName: string
+  originalName: string
+  mimeType: string
+  fileSize: number
+  sha256Hash: string
+  storagePath: string
+  ipfsCid: string | null
+  visibility: DocumentVisibility
+  status: DocumentStatus
+  createdAt: string
+  updatedAt: string
 }
