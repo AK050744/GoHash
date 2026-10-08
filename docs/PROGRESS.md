@@ -9,6 +9,7 @@
 | **Sprint 2A & 2B** | `frontend/` (Layout shell & Auth UI integration) | **Complete** | Dark theme UI kit, route guards, `/login`, `/register`, `/403` |
 | **Sprint 3A** | `backend/` (Document upload, hashing & request) | **Complete** | 27/27 smoke assertions passing with Docker Mongo running |
 | **Sprint 3A-TESTFIX** | `backend/` (Test isolation & standalone runner) | **Complete** | Ephemeral port isolation, test DB isolation, fail-fast Mongo check |
+| **Sprint 3A-DBFIX** | `backend/` (Dev server fail-fast DB & test route purge) | **Complete** | Removed in-memory fallback (exits code 1 if down), purged test-admin route |
 | **Sprint 3B** | `frontend/` (Document upload & management pages) | **Not Started** | Upload page, document table, and 3 dashboard stat cards |
 | **Sprint 4A & 4B** | Full-stack (Blockchain integration & notary actions) | **Pending** | Local node deployment, read-only RPC, MetaMask signing |
 | **Sprint 5A & 5B** | Full-stack (Verification engine, admin & certificate) | **Pending** | Public `/api/verify`, admin management, verifiable certificate |
@@ -21,7 +22,7 @@
 1. **Backend Key Security**: The backend never holds any private key (deployer or notary). The NOTARY signs the notarize transaction in MetaMask in the browser. The backend utilizes a READ-ONLY JSON-RPC provider. After the browser sends the transaction hash to the backend, the backend verifies the receipt on-chain (transaction success, correct contract address, matching document hash, and verifying that the on-chain signer matches the notary's registered wallet) before marking the document status as `NOTARIZED`.
 2. **Server-Side Hashing Only**: SHA-256 is computed on the server only. The frontend never uses the Web Crypto API or hashes files client-side; it displays the hash returned by the API.
 3. **Off-Chain Document Storage**: The PDF is never stored on-chain. Only the cryptographic SHA-256 hash, timestamp, and verification metadata are committed to the blockchain.
-4. **Database Environment**: Local MongoDB runs in Docker (container name `gohash-mongo`, host port `27017`).
+4. **Database Environment**: Local MongoDB runs in Docker (container name `gohash-mongo`, host port `27017`). The backend requires a real MongoDB instance and immediately terminates with exit code 1 if MongoDB is unreachable; all in-memory database fallbacks have been removed.
 5. **Project Terminology & Framing**: The system is framed as providing **tamper-evident** and **independently verifiable** proof-of-existence. The system is never described as "100% immutable" or as something that "replaces legal notaries".
 
 ---
@@ -37,7 +38,7 @@ Local database services run through Docker container `gohash-mongo` using the of
 - **Persistence**: Data persists in the named Docker volume `mongo-data` (destination `/data/db`).
 
 ### Troubleshooting
-> **Troubleshooting**: Backend returns 500 / health shows db state 0 -> run `docker ps`; if gohash-mongo is not running, `docker start gohash-mongo`.
+> **Troubleshooting**: If MongoDB is not running, the dev server (`npm run dev`) immediately terminates with exit code 1 and logs `MongoDB not reachable at <uri>. Start it with: docker start gohash-mongo`. Start the container with `docker start gohash-mongo`.
 
 ---
 
@@ -79,6 +80,11 @@ Local database services run through Docker container `gohash-mongo` using the of
 - **Fail-Fast Mongo Connectivity**: Replaced silent in-memory MongoDB fallback with an immediate fail-fast error directing the operator to start Docker Mongo (`docker start gohash-mongo`).
 - **Clean Teardown**: Drops the `gohash_test` database at the start and end of test runs, and unlinks any test files written to `backend/uploads/`.
 - **Error Stack Sanitization**: Removed `stack` traces from 500 error response bodies across all environments, logging stack traces exclusively to the server console.
+
+### Sprint 3A-DBFIX (Dev Server Fail-Fast MongoDB & Test Route Removal)
+- **Zero Silent Fallback**: Completely uninstalled `mongodb-memory-server` and stripped all in-memory fallback routines from `src/config/db.ts`. If MongoDB is down, `connectDB` throws `MongoDB not reachable at <uri>. Start it with: docker start gohash-mongo` with 5-second timeout, and `server.ts` logs that message and exits with code 1.
+- **URI Credential Masking**: Automatically masks user credentials (`mongodb://user:***@host`) before logging connection errors.
+- **Production Route Purge**: Removed test-only `/test-admin` route from `src/routes/auth.routes.ts`. The smoke test dynamically mounts a throwaway RBAC test route on the test express instance before listening.
 
 ---
 

@@ -18,7 +18,7 @@ export async function bootstrap() {
 // Start server if this file is run directly
 if (process.env.NODE_ENV !== 'test' || require.main === module) {
   bootstrap().catch((err) => {
-    console.error('Fatal error during startup:', err)
+    console.error(err.message || err)
     process.exit(1)
   })
 }

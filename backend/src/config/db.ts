@@ -3,60 +3,50 @@ import { env } from './env'
 
 let isConnected = false
 let isShuttingDown = false
-let memoryServerInstance: any = null
 
 /**
- * Connect to MongoDB using Mongoose with event listeners.
- * In development and test environments, falls back to MongoMemoryServer
- * if a local MongoDB daemon is not reachable.
+ * Mask credentials in MongoDB connection string.
  */
-export async function connectDB(uri?: string): Promise<typeof mongoose> {
-  const targetUri = uri || env.MONGODB_URI
-
+function maskMongoUri(uri: string): string {
   try {
-    const conn = await mongoose.connect(targetUri, {
-      serverSelectionTimeoutMS: 3000,
-    })
-    isConnected = true
-    console.log(`✅ MongoDB connected: ${conn.connection.host || 'localhost'}`)
-    return conn
-  } catch (error: any) {
-    // If local daemon is not running in dev/test, use MongoMemoryServer fallback
-    if (
-      env.NODE_ENV !== 'production' &&
-      (error.name === 'MongooseServerSelectionError' || error.message?.includes('ECONNREFUSED'))
-    ) {
-      console.warn(`⚠️  Cannot reach ${targetUri}. Initializing local in-memory MongoDB...`)
-      try {
-        const { MongoMemoryServer } = await import('mongodb-memory-server')
-        memoryServerInstance = await MongoMemoryServer.create()
-        const memoryUri = memoryServerInstance.getUri()
-        const conn = await mongoose.connect(memoryUri)
-        isConnected = true
-        console.log(`✅ MongoDB connected: ${conn.connection.host || 'localhost'} (in-memory)`)
-        return conn
-      } catch (memErr) {
-        console.error('❌ In-memory MongoDB startup failed:', memErr)
-      }
+    const parsed = new URL(uri)
+    if (parsed.password) {
+      parsed.password = '***'
+      return parsed.toString()
     }
-
-    console.error('❌ MongoDB connection error:', error)
-    throw error
+    return uri
+  } catch {
+    return uri.replace(/(mongodb(?:\+srv)?:\/\/[^:]+:)[^@]+(@)/, '$1***$2')
   }
 }
 
 /**
- * Gracefully disconnect Mongoose connection and shutdown memory server if active.
+ * Connect to MongoDB using Mongoose with event listeners.
+ */
+export async function connectDB(uri?: string): Promise<typeof mongoose> {
+  const targetUri = uri || env.MONGODB_URI
+  const maskedUri = maskMongoUri(targetUri)
+
+  try {
+    const conn = await mongoose.connect(targetUri, {
+      serverSelectionTimeoutMS: 5000,
+    })
+    isConnected = true
+    console.log(`✅ MongoDB connected: ${conn.connection.host || 'localhost'}`)
+    return conn
+  } catch (_error: any) {
+    throw new Error(`MongoDB not reachable at ${maskedUri}. Start it with: docker start gohash-mongo`)
+  }
+}
+
+/**
+ * Gracefully disconnect Mongoose connection.
  */
 export async function disconnectDB(): Promise<void> {
-  if (!isConnected && !memoryServerInstance) return
+  if (!isConnected && mongoose.connection.readyState === 0) return
   try {
     await mongoose.connection.close()
     isConnected = false
-    if (memoryServerInstance) {
-      await memoryServerInstance.stop()
-      memoryServerInstance = null
-    }
     console.log('🔌 MongoDB connection closed gracefully')
   } catch (error) {
     console.error('❌ Error closing MongoDB connection:', error)
@@ -82,10 +72,10 @@ export function getDbState(): { state: number; status: string } {
 
 // ─── Connection Lifecycle Listeners ──────────────────────────────────────────
 mongoose.connection.on('disconnected', () => {
-  isConnected = false
-  if (!isShuttingDown) {
+  if (isConnected && !isShuttingDown) {
     console.warn('⚠️  MongoDB connection lost / disconnected')
   }
+  isConnected = false
 })
 
 mongoose.connection.on('error', (err) => {

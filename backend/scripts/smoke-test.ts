@@ -8,6 +8,7 @@ import { env } from '../src/config/env'
 import { User } from '../src/models/User'
 import { DocumentModel } from '../src/models/Document'
 import { Notarization } from '../src/models/Notarization'
+import { requireAuth, requireRole } from '../src/middleware/auth.middleware'
 
 let server: http.Server | null = null
 let BASE_URL = ''
@@ -128,6 +129,20 @@ async function runSmokeTests() {
     DocumentModel.init(),
     Notarization.init(),
   ])
+
+  // Register throwaway requireRole('ADMIN') route on express app for RBAC verification
+  app.get('/api/test-rbac-admin', requireAuth, requireRole('ADMIN'), (_req, res) => {
+    res.status(200).json({ success: true, message: 'Admin access confirmed' })
+  })
+  const rbacLayer = (app as any)._router.stack.pop()
+  const notFoundIdx = (app as any)._router.stack.findIndex(
+    (l: any) => l.name === 'notFoundHandler' || l.handle?.name === 'notFoundHandler'
+  )
+  if (notFoundIdx !== -1) {
+    ;(app as any)._router.stack.splice(notFoundIdx, 0, rbacLayer)
+  } else {
+    ;(app as any)._router.stack.push(rbacLayer)
+  }
 
   // Spin up isolated test server on random free port (listen(0))
   server = app.listen(0)
@@ -340,7 +355,7 @@ async function runSmokeTests() {
 
     // 12. RBAC check: Regular USER blocked from requireRole('ADMIN')
     try {
-      const res = await request('/api/auth/test-admin', {
+      const res = await request('/api/test-rbac-admin', {
         headers: { Authorization: `Bearer ${authToken}` },
       })
 
