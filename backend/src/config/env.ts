@@ -23,10 +23,11 @@ const envSchema = z.object({
   SEED_NOTARY_EMAIL: z.string().email().default('notary@gohash.io'),
   SEED_NOTARY_PASSWORD: z.string().min(8).default('NotaryPassword123!'),
 
-  // Blockchain integration preserved from Days 1-3
-  CHAIN_RPC_URL: z.string().default('http://127.0.0.1:8545'),
-  NOTARY_CONTRACT_ADDRESS: z.string().default(''),
-  DEPLOYER_PRIVATE_KEY: z.string().default(''),
+  // Blockchain — read-only RPC provider (no private key or mnemonic)
+  RPC_URL: z.string().default('http://127.0.0.1:8545'),
+  CHAIN_ID: z.coerce.number().int().positive().default(31337),
+  // Path to blockchain/deployments/localhost.json written by the deploy script
+  DEPLOYMENT_FILE: z.string().default('../blockchain/deployments/localhost.json'),
 })
 
 const parseResult = envSchema.safeParse({

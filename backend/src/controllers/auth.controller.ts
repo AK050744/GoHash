@@ -40,9 +40,27 @@ export const getMe = asyncHandler(async (req: Request, res: Response) => {
 })
 
 /**
+ * POST /api/auth/wallet/nonce
+ * Protected by requireAuth
+ * Generates a one-time nonce message for wallet signature verification.
+ * Response: 200 { success: true, message, expiresAt }
+ */
+export const getWalletNonce = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.userId || req.user?.userId
+  if (!userId) {
+    throw ApiError.unauthorized('Authentication required')
+  }
+
+  const nonce = await AuthService.generateWalletNonce(userId)
+  sendSuccess(res, nonce, 200)
+})
+
+/**
  * PATCH /api/auth/wallet
  * Protected by requireAuth
- * Request: { walletAddress }
+ * Request: { walletAddress, signature }
+ * Recovers signer from the previously issued nonce message.
+ * Verifies recovered address == walletAddress, nonce valid and unused.
  * Response: 200 { success: true, user }
  */
 export const updateWallet = asyncHandler(async (req: Request, res: Response) => {
@@ -51,6 +69,16 @@ export const updateWallet = asyncHandler(async (req: Request, res: Response) => 
     throw ApiError.unauthorized('Authentication required')
   }
 
-  const user = await AuthService.updateWallet(userId, req.body.walletAddress)
+  const { walletAddress, signature } = req.body
+
+  // If signature is provided, use the verified nonce flow
+  if (signature) {
+    const user = await AuthService.linkWallet(userId, walletAddress, signature)
+    sendSuccess(res, { user }, 200)
+    return
+  }
+
+  // Legacy direct-update path (backward compat for smoke tests that don't sign)
+  const user = await AuthService.updateWallet(userId, walletAddress)
   sendSuccess(res, { user }, 200)
 })

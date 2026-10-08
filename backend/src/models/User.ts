@@ -9,6 +9,8 @@ export interface IUser extends Document {
   passwordHash: string
   role: UserRole
   walletAddress?: string | null
+  walletNonce?: string | null
+  walletNonceExpiry?: Date | null
   isActive: boolean
   createdAt: Date
   updatedAt: Date
@@ -52,6 +54,17 @@ const UserSchema = new Schema<IUser>(
         },
         message: 'Invalid Ethereum wallet address format (must be 0x followed by 40 hex characters)',
       },
+    },
+    // One-time nonce for wallet-link signature verification (never returned in API responses)
+    walletNonce: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    walletNonceExpiry: {
+      type: Date,
+      default: null,
+      select: false,
     },
     isActive: {
       type: Boolean,

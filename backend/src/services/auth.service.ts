@@ -1,11 +1,14 @@
+import crypto from 'crypto'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import { ethers } from 'ethers'
 import { User, IUser } from '../models/User'
 import { env } from '../config/env'
 import { ApiError } from '../utils/ApiError'
 import { RegisterInput, LoginInput } from '../validations/auth.validation'
 
 const BCRYPT_SALT_ROUNDS = 12
+const NONCE_VALID_MINUTES = 5
 
 export interface AuthSuccessPayload {
   token: string
@@ -17,6 +20,11 @@ export interface AuthSuccessPayload {
     walletAddress?: string | null
     isActive: boolean
   }
+}
+
+export interface NoncePayload {
+  message: string
+  expiresAt: string
 }
 
 export class AuthService {
@@ -121,7 +129,127 @@ export class AuthService {
   }
 
   /**
-   * Update public Ethereum wallet address for authenticated user.
+   * Generate a one-time nonce for wallet-link signature verification.
+   * The nonce is stored (select:false) on the user document, valid for 5 minutes.
+   * Returns a human-readable message the user must sign with their wallet.
+   */
+  static async generateWalletNonce(userId: string): Promise<NoncePayload> {
+    const user = await User.findById(userId)
+    if (!user) {
+      throw ApiError.notFound('User not found', 'USER_NOT_FOUND')
+    }
+
+    const nonce     = crypto.randomBytes(16).toString('hex')
+    const expiresAt = new Date(Date.now() + NONCE_VALID_MINUTES * 60 * 1000)
+
+    const message = [
+      'GoHash wallet link',
+      `User: ${userId}`,
+      `Nonce: ${nonce}`,
+      `Expires: ${expiresAt.toISOString()}`,
+    ].join('\n')
+
+    // Save nonce (select:false fields must be set explicitly)
+    await User.updateOne(
+      { _id: userId },
+      { walletNonce: nonce, walletNonceExpiry: expiresAt }
+    )
+
+    return { message, expiresAt: expiresAt.toISOString() }
+  }
+
+  /**
+   * Verify a signed wallet-link message and persist the wallet address.
+   *
+   * Flow:
+   *   1. Load user with walletNonce + walletNonceExpiry (select:false fields).
+   *   2. Verify nonce is present and not expired.
+   *   3. Reconstruct the canonical message from stored nonce.
+   *   4. Recover signer via ethers.verifyMessage (never creates a Wallet).
+   *   5. Check recovered address == walletAddress.
+   *   6. Ensure no other user already owns that wallet.
+   *   7. Persist lowercase walletAddress; clear nonce.
+   */
+  static async linkWallet(
+    userId: string,
+    walletAddress: string,
+    signature: string
+  ): Promise<Record<string, unknown>> {
+    // Must select hidden fields
+    const user = await User.findById(userId).select('+walletNonce +walletNonceExpiry')
+    if (!user) {
+      throw ApiError.notFound('User not found', 'USER_NOT_FOUND')
+    }
+
+    // Validate nonce
+    if (
+      !user.walletNonce ||
+      !user.walletNonceExpiry ||
+      new Date() > user.walletNonceExpiry
+    ) {
+      throw ApiError.badRequest('Nonce is invalid or has expired. Request a new one.', 'NONCE_INVALID')
+    }
+
+    // Reconstruct the exact message that was presented to the user
+    const message = [
+      'GoHash wallet link',
+      `User: ${userId}`,
+      `Nonce: ${user.walletNonce}`,
+      `Expires: ${user.walletNonceExpiry.toISOString()}`,
+    ].join('\n')
+
+    // Recover the signer — ethers.verifyMessage does NOT create or hold any key
+    let recovered: string
+    try {
+      recovered = ethers.verifyMessage(message, signature)
+    } catch {
+      throw ApiError.badRequest('Invalid signature', 'NONCE_INVALID')
+    }
+
+    if (recovered.toLowerCase() !== walletAddress.toLowerCase()) {
+      throw ApiError.badRequest(
+        'Signature does not match the provided wallet address',
+        'NONCE_INVALID'
+      )
+    }
+
+    // Ensure no other user already owns this wallet address
+    const existing = await User.findOne({
+      walletAddress: walletAddress.toLowerCase(),
+      _id: { $ne: userId },
+    })
+    if (existing) {
+      throw ApiError.conflict('This wallet address is already linked to another account', 'WALLET_IN_USE')
+    }
+
+    // Persist — clear nonce after use (one-time)
+    const updated = await User.findByIdAndUpdate(
+      userId,
+      {
+        walletAddress: walletAddress.toLowerCase(),
+        walletNonce: null,
+        walletNonceExpiry: null,
+      },
+      { new: true, runValidators: true }
+    )
+
+    if (!updated) {
+      throw ApiError.notFound('User not found', 'USER_NOT_FOUND')
+    }
+
+    return {
+      id: updated._id.toString(),
+      name: updated.name,
+      email: updated.email,
+      role: updated.role,
+      walletAddress: updated.walletAddress,
+      isActive: updated.isActive,
+    }
+  }
+
+  /**
+   * Update public Ethereum wallet address for authenticated user (legacy direct update).
+   * This path is kept for backward compatibility with smoke tests.
    */
   static async updateWallet(userId: string, walletAddress: string): Promise<Record<string, unknown>> {
     const user = await User.findByIdAndUpdate(
@@ -153,5 +281,19 @@ export class AuthService {
       env.JWT_SECRET,
       { expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'] }
     )
+  }
+
+  /**
+   * Helper: serialize a User document to API shape (no sensitive fields).
+   */
+  static serializeUser(user: IUser): Record<string, unknown> {
+    return {
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      walletAddress: user.walletAddress,
+      isActive: user.isActive,
+    }
   }
 }

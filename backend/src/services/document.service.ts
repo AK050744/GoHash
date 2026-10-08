@@ -2,8 +2,10 @@ import fs from 'fs'
 import path from 'path'
 import { Types } from 'mongoose'
 import { DocumentModel, IDocument, DocumentStatus } from '../models/Document'
+import { Notarization } from '../models/Notarization'
 import { computeSha256 } from './hash.service'
 import { ApiError } from '../utils/ApiError'
+
 
 export class DocumentService {
   /**
@@ -130,6 +132,7 @@ export class DocumentService {
   /**
    * Get single document metadata. Accessible by owner, NOTARY, or ADMIN.
    * If not found or unauthorized, returns 404 so existence is not leaked.
+   * Includes latest notarization record.
    */
   static async getDocumentById(documentId: string, userId: string, userRole: string) {
     if (!Types.ObjectId.isValid(documentId)) {
@@ -148,6 +151,23 @@ export class DocumentService {
       throw ApiError.notFound('Document not found', 'NOT_FOUND')
     }
 
+    // Fetch the latest (most recent) notarization for this document
+    const notarizationDoc = await Notarization.findOne({ documentId: doc._id })
+      .sort({ createdAt: -1 })
+      .lean()
+
+    const notarization = notarizationDoc
+      ? {
+          id:              notarizationDoc._id.toString(),
+          status:          notarizationDoc.status,
+          transactionHash: notarizationDoc.transactionHash ?? null,
+          blockNumber:     notarizationDoc.blockNumber ?? null,
+          notaryWallet:    notarizationDoc.notaryWallet ?? null,
+          contractAddress: notarizationDoc.contractAddress ?? null,
+          timestamp:       notarizationDoc.onChainTimestamp ?? null,
+        }
+      : null
+
     return {
       id: doc._id.toString(),
       originalName: doc.originalName,
@@ -161,8 +181,10 @@ export class DocumentService {
       ownerId: doc.ownerId.toString(),
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
+      notarization,
     }
   }
+
 
   /**
    * Get physical file path for streaming. Accessible by owner, NOTARY, or ADMIN.

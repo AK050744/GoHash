@@ -25,6 +25,8 @@ export const updateWalletSchema = z.object({
     .trim()
     .toLowerCase()
     .regex(/^0x[a-f0-9]{40}$/, 'Invalid Ethereum wallet address format (must be 0x followed by 40 hex characters)'),
+  // Optional signature for verified wallet linking (nonce flow)
+  signature: z.string().trim().optional(),
 })
 
 export type RegisterInput = z.infer<typeof registerSchema>

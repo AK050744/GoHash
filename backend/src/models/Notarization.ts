@@ -13,7 +13,9 @@ export interface INotarization extends MongooseDocument {
   blockNumber?: number | null
   contractAddress?: string | null
   chainId?: number | null
+  onChainTimestamp?: number | null  // block.timestamp from the DocumentNotarized event
   rejectionReason?: string | null
+  failureReason?: string | null     // set when a confirm tx is reverted
   status: NotarizationStatus
   createdAt: Date
   updatedAt: Date
@@ -53,6 +55,7 @@ const NotarizationSchema = new Schema<INotarization>(
     transactionHash: {
       type: String,
       default: null,
+      index: true, // indexed to detect duplicate txHash across notarizations
     },
     blockNumber: {
       type: Number,
@@ -66,7 +69,15 @@ const NotarizationSchema = new Schema<INotarization>(
       type: Number,
       default: null,
     },
+    onChainTimestamp: {
+      type: Number,
+      default: null,
+    },
     rejectionReason: {
+      type: String,
+      default: null,
+    },
+    failureReason: {
       type: String,
       default: null,
     },
