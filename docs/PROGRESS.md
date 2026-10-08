@@ -1,55 +1,129 @@
 # GoHash Project Progress
 
-## Done
+## Status Table
 
-### 1. Blockchain Foundation (Days 1–3)
-- Deployed and tested `DocumentNotary.sol` smart contract on Hardhat local network.
-- Implemented document registration, verification, status tracking, and event emission.
-- Comprehensive unit tests passing on Windows environment.
+| Milestone | Scope | Status | Notes |
+| :--- | :--- | :---: | :--- |
+| **Blockchain Days 1–3** | `blockchain/` (Smart contract foundation & tests) | **Complete** | `DocumentNotary.sol` implemented; unit & integration tests passing |
+| **Sprint 1A & 1B** | `backend/` (Express foundation & JWT auth / RBAC) | **Complete** | Mongoose models, Zod validation, JWT auth, role middleware |
+| **Sprint 2A & 2B** | `frontend/` (Layout shell & Auth UI integration) | **Complete** | Dark theme UI kit, route guards, `/login`, `/register`, `/403` |
+| **Sprint 3A** | `backend/` (Document upload, hashing & request) | **Complete** | 27/27 smoke assertions passing with Docker Mongo running |
+| **Sprint 3A-TESTFIX** | `backend/` (Test isolation & standalone runner) | **Pending** | Isolate smoke test runner from live server instance |
+| **Sprint 3B** | `frontend/` (Document upload & management pages) | **Not Started** | Upload page, document table, and 3 dashboard stat cards |
+| **Sprint 4A & 4B** | Full-stack (Blockchain integration & notary actions) | **Pending** | Local node deployment, read-only RPC, MetaMask signing |
+| **Sprint 5A & 5B** | Full-stack (Verification engine, admin & certificate) | **Pending** | Public `/api/verify`, admin management, verifiable certificate |
+| **Sprint 6A & 6B** | Full-stack (Security hardening & final documentation)| **Pending** | Rate limiting, audit, and project presentation package |
 
-### 2. Backend Foundation (Day 4)
-- Express + TypeScript architecture with Zod environment validation and Mongoose models (`User`, `Document`, `Notarization`).
-- JWT authentication (`/api/auth/register`, `/api/auth/login`, `/api/auth/me`).
-- Role-based authorization (`USER`, `NOTARY`, `ADMIN`).
-- Docker Compose configuration for MongoDB (`gohash-mongo`).
-- Global error handling, Helmet, CORS, and request logging with Morgan.
+---
 
-### 3. Frontend Foundation & Auth Integration (Task 2A / 2B)
-- Vite + React 18 + TypeScript + Tailwind CSS (v3.4.19) foundation.
-- Central typed API wrapper (`frontend/src/lib/api.ts`) supporting envelope parsing, automatic JWT bearer attachment, and 401 token wipe with redirect to `/login`.
-- Authentication Context (`AuthContext`) with session rehydration (`/api/auth/me`), login/register handling, and token management in localStorage.
-- Protected route guards (`ProtectedRoute` and `RoleRoute`) with HTTP 403 access control (`/403`).
-- Role-based redirection and access control:
-  - `USER`: `/dashboard`
-  - `NOTARY`: `/notary/dashboard` (restricted strictly to `NOTARY` role)
-  - `ADMIN`: `/admin/dashboard` (restricted strictly to `ADMIN` role)
-- Public routes: Landing page (`/`), Login (`/login`), Register (`/register`), Verify placeholder (`/verify`), 403 Unauthorized (`/403`), 404 Not Found (`*`).
-- Core UI kit: `Button`, `Card`, `StatCard`, `StatusBadge`, `EmptyState`, `Spinner`, `Alert`.
-- Production build (`npm run build`) and ESLint (`npm run lint`) clean with zero errors and zero warnings.
+## Locked Decisions
 
-### 4. Document Management & Notarization Request (Task 3A - Day 6)
-- **Multer Memory Storage Upload**: Configured memory-based multipart upload with size limits derived from `MAX_FILE_SIZE_MB`.
-- **Validation**: Enforced strict MIME checking (`application/pdf`) and binary magic byte validation (starts with `"%PDF-"`), rejecting text files or non-PDFs with `400 INVALID_FILE`.
-- **SHA-256 Hashing**: Computed cryptographic hash with Node crypto buffer hashing (`services/hash.service.ts`).
-- **Disk Storage Security**: Saved files to `backend/uploads/<documentId>.pdf` without exposing user-supplied filenames in file paths; user filename preserved in `originalName`.
-- **Duplicate Document Guard**: Rejected identical uploads by the same owner with `409 DUPLICATE_DOCUMENT`.
-- **Document Stats**: Implemented `GET /api/documents/stats` registered before `/:id` returning `{ total, pending, notarized }`.
-- **Ownership Isolation**: `GET /api/documents/:id` and `GET /api/documents/:id/file` restrict access to owner, NOTARY, or ADMIN, returning `404 NOT_FOUND` to unauthorized callers to avoid leaking document existence.
-- **Inline Streaming**: `GET /api/documents/:id/file` streams PDF inline with proper `Content-Disposition`.
-- **Notarization Request**: `POST /api/notarization/request` allows document owners to submit `PENDING` documents for attestation, creating `Notarization` records with status `REQUESTED` and rejecting duplicates with `409 DUPLICATE_REQUEST`.
-- **Smoke Tests**: Extended `backend/scripts/smoke-test.ts` to 27 automated tests passing with 0 failures, covering upload, hash verification, MIME validation, cross-user isolation, file streaming, and notarization requests.
-- **Contract & Docs**: Synchronized [docs/API_CONTRACT.md](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/docs/API_CONTRACT.md) with updated request/response definitions.
+1. **Backend Key Security**: The backend never holds any private key (deployer or notary). The NOTARY signs the notarize transaction in MetaMask in the browser. The backend utilizes a READ-ONLY JSON-RPC provider. After the browser sends the transaction hash to the backend, the backend verifies the receipt on-chain (transaction success, correct contract address, matching document hash, and verifying that the on-chain signer matches the notary's registered wallet) before marking the document status as `NOTARIZED`.
+2. **Server-Side Hashing Only**: SHA-256 is computed on the server only. The frontend never uses the Web Crypto API or hashes files client-side; it displays the hash returned by the API.
+3. **Off-Chain Document Storage**: The PDF is never stored on-chain. Only the cryptographic SHA-256 hash, timestamp, and verification metadata are committed to the blockchain.
+4. **Database Environment**: Local MongoDB runs in Docker (container name `gohash-mongo`, host port `27017`).
+5. **Project Terminology & Framing**: The system is framed as providing **tamper-evident** and **independently verifiable** proof-of-existence. The system is never described as "100% immutable" or as something that "replaces legal notaries".
+
+---
+
+## Docker Setup
+
+### Overview
+Local database services run through Docker container `gohash-mongo` using the official `mongo:latest` image.
+
+- **Start Command**: `docker start gohash-mongo` (or `docker compose up -d`)
+- **Stop Command**: `docker stop gohash-mongo` (or `docker compose down`)
+- **Database Connection URI**: `mongodb://localhost:27017/gohash` (exact value from `backend/.env.example`)
+- **Persistence**: Data persists in the named Docker volume `mongo-data` (destination `/data/db`).
+
+### Troubleshooting
+> **Troubleshooting**: Backend returns 500 / health shows db state 0 -> run `docker ps`; if gohash-mongo is not running, `docker start gohash-mongo`.
+
+---
+
+## Completed Sprints
+
+### Blockchain Days 1–3 (Smart Contract Foundation)
+- Authored and verified `DocumentNotary.sol` with document hash registration, notary attestation, revocation, and role-based permissions.
+- Hardhat unit and integration test suites passing cleanly in PowerShell.
+- Local deployment and account inspection scripts in `blockchain/scripts/`.
+
+### Sprint 1A & 1B (Backend Foundation & JWT Authentication)
+- Express + TypeScript architecture with fail-fast Zod environment parsing (`config/env.ts`).
+- Mongoose schemas with validation and compound indexes: `User`, `Document`, `Notarization`.
+- JWT authentication pipeline (`/api/auth/register`, `/api/auth/login`, `/api/auth/me`).
+- Role-based authorization middleware (`USER`, `NOTARY`, `ADMIN`) and wallet update endpoint (`PATCH /api/auth/wallet`).
+
+### Sprint 2A & 2B (Frontend Foundation & Auth UI Integration)
+- Vite + React + TypeScript + Tailwind CSS (v3.4.19) application structure.
+- Reusable UI kit: `Button`, `Card`, `StatCard`, `StatusBadge`, `EmptyState`, `Spinner`, `Alert`.
+- Central API client (`lib/api.ts`) with envelope parsing, bearer token handling, and 401 redirection to `/login`.
+- Strict route guards: `ProtectedRoute`, `RoleRoute` with dedicated `/403` Forbidden page and `/404` Not Found page.
+- Landing page, Login page, and Registration page fully wired to backend auth APIs.
+
+### Sprint 3A (Document Upload, Storage & Notarization Request)
+- **Multer Memory Buffer**: Multipart file uploads with limits derived from `MAX_FILE_SIZE_MB`.
+- **File Validation**: Strict `application/pdf` MIME check and `%PDF-` binary magic bytes verification; rejects invalid files with `400 INVALID_FILE`.
+- **SHA-256 Hashing**: Computed via Node crypto buffer hashing (`services/hash.service.ts`).
+- **Disk Storage**: Files saved to `backend/uploads/<documentId>.pdf` using generated document IDs; client filename preserved only as `originalName`.
+- **Duplicate Document Guard**: Rejects identical uploads by the same owner with `409 DUPLICATE_DOCUMENT`.
+- **Document Stats**: `GET /api/documents/stats` mounted before `/:id` returning `{ total, pending, notarized }`.
+- **Cross-User Isolation**: `GET /api/documents/:id` and `GET /api/documents/:id/file` return `404 NOT_FOUND` for unauthorized callers so existence is not leaked.
+- **Inline PDF Streaming**: `GET /api/documents/:id/file` streams PDF inline with proper headers.
+- **Notarization Request**: `POST /api/notarization/request` allows owners of `PENDING` documents to request attestation (`status: "REQUESTED"`); duplicate requests rejected with `409 DUPLICATE_REQUEST`.
+- **Smoke Tests**: 27/27 automated assertions passing in `backend/scripts/smoke-test.ts` with Mongo running.
+
+---
+
+## Remaining Backlog
+
+### Sprint 3A-TESTFIX (Backend Test Isolation)
+- [ ] Configure `backend/scripts/smoke-test.ts` to spin up an isolated test port and ephemeral database connection rather than attaching to the active development `:5000` server.
+
+### Sprint 3B (Frontend Document & Dashboard Pages)
+- [ ] **Document Upload Page (`/upload`)**: Drag-and-drop PDF upload component sending multipart data to `POST /api/documents/upload`; displays server-computed SHA-256 hash.
+- [ ] **User Dashboard (`/dashboard`)**: Connect 3 stats cards matching `GET /api/documents/stats`: `Total`, `Pending`, `Notarized`.
+- [ ] **Documents Library (`/documents`)**: Document list and table with status badges (`PENDING`, `APPROVED`, `REJECTED`, `NOTARIZED`), search, and status filter.
+- [ ] **Document Detail (`/documents/:id`)**: Document inspection view displaying hash, timestamp, status, and inline PDF view (`/api/documents/:id/file`).
+- [ ] **Profile Page (`/profile`)**: User information display and MetaMask wallet connection triggering `PATCH /api/auth/wallet`.
+
+### Sprint 4A (Blockchain Environment & Read-Only RPC Provider)
+- [ ] Fix 2 TypeScript compilation errors in `blockchain/scripts/deploy-local.ts`.
+- [ ] Run Hardhat local node and deploy `DocumentNotary.sol` to record contract address.
+- [ ] Implement backend read-only JSON-RPC provider in `backend/src/services/blockchain.service.ts` using `ethers.JsonRpcProvider`.
+
+### Sprint 4B (Notary Review & On-Chain Verification Workflow)
+- [ ] Implement `GET /api/notarization/pending` for notary review queue.
+- [ ] Notary UI (`/notary/dashboard` and `/notary/requests/:id`): review document details and inline PDF.
+- [ ] MetaMask attestation signing in browser: Notary signs `notarizeDocument()` transaction.
+- [ ] Implement `POST /api/notarization/:id/approve`: browser passes txHash; backend inspects on-chain receipt (verifies transaction success, matching contract address, matching document hash, and verifying that the signer matches the notary's wallet) before marking `NOTARIZED`.
+- [ ] Implement `POST /api/notarization/:id/reject`: records rejection reason and marks document `REJECTED`.
+- [ ] Implement `GET /api/blockchain/:documentId`: queries smart contract state for raw attestation receipt.
+
+### Sprint 5A (Public Independent Verification Engine)
+- [ ] Implement `POST /api/verify`: accepts SHA-256 hash string or PDF file; verifies against database records and cross-checks on-chain smart contract data.
+- [ ] Public Verification Page (`/verify`): search input by hash or file upload; displays tamper-evident attestation status, block number, and notary identity.
+
+### Sprint 5B (Admin Management & Verifiable Certificates)
+- [ ] Admin pages (`/admin/dashboard` & `/admin/notaries`): system overview metrics, notary promotion, and notary deactivation.
+- [ ] Verifiable digital notarization certificate generation / export (PDF receipt summarizing on-chain attestation details).
+
+### Sprint 6A (Security Hardening & Production Polish)
+- [ ] Rate limiting on authentication and upload endpoints.
+- [ ] Helmet header fine-tuning, CORS verification, and input validation auditing.
+
+### Sprint 6B (Documentation & Project Handoff)
+- [ ] Finalize API contract and architecture documentation.
+- [ ] End-to-end demonstration script and testing walkthrough.
 
 ---
 
 ## How to Run
 
-### Prerequisites
-- Node.js (v18+ or v20+)
-- Docker Desktop (for MongoDB)
-
-### 1. Start MongoDB
+### 1. Start MongoDB (Docker)
 ```powershell
+docker start gohash-mongo
+# or using compose:
 docker compose up -d
 ```
 
@@ -69,50 +143,26 @@ npm run dev
 ```
 Frontend runs at `http://localhost:5173`.
 
-### 4. Build & Lint Verification
+### 4. Verification Commands
 ```powershell
-cd frontend
+# Backend typecheck
+cd backend
+npm run typecheck
+
+# Backend smoke test (ensure Docker Mongo is running)
+npm run test:smoke
+
+# Frontend build & lint
+cd ../frontend
 npm run lint
 npm run build
 ```
 
 ---
 
-## Environment Variables
+## Known Issues
 
-### Frontend (`frontend/.env`)
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `VITE_API_URL` | Base URL for backend Express API | `http://localhost:5000/api` |
-
-*(Sample template provided in `frontend/.env.example`)*
-
-### Backend (`backend/.env`)
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `PORT` | API Server port | `5000` |
-| `NODE_ENV` | Environment mode (`development` / `production`) | `development` |
-| `MONGODB_URI` | MongoDB connection string | `mongodb://localhost:27017/gohash` |
-| `JWT_SECRET` | Secret key for signing JWT tokens | *(configured)* |
-| `JWT_EXPIRES_IN` | Token expiration time | `7d` |
-| `CORS_ORIGIN` | Allowed client origin | `http://localhost:5173` |
-
----
-
-## Known Issues & Notes
-
-- **Headless Browser Driver in Sandbox**: Playwright driver binary auto-download failed from Azure CDN within the restricted sandbox; manual browser testing at `http://localhost:5173` should be used instead of automated headless browser subagent runs.
-- **LocalStorage JWT Tradeoff**: Storing JWT in `localStorage` makes it vulnerable to hypothetical XSS attacks (mitigated by strict avoidance of `dangerouslySetInnerHTML`). For production deployment, httpOnly cookies with CSRF protection are recommended.
-
----
-
-## Next Steps
-
-1. **Document Upload & Client-Side Hashing (Task 3)**:
-   - Implement file dropzone and client-side SHA-256 calculation using Web Crypto API.
-   - Wire document upload to `POST /api/documents/upload`.
-2. **Notarization Requests**:
-   - Enable users to submit uploaded documents for notary review (`POST /api/notarization/request`).
-   - Implement notary review queue (`/notary/dashboard`) and approval/rejection workflows.
-3. **Smart Contract Integration**:
-   - Connect ethers.js provider/signer for notary blockchain transaction signing upon approval.
+1. **`blockchain/scripts/deploy-local.ts` TypeScript Errors**: Contains 2 TypeScript errors on lines 55 and 65 (`Property 'addNotary' does not exist on type 'BaseContract'` and `Property 'notarize' does not exist on type 'BaseContract'`), to be fixed prior to Sprint 4.
+2. **Smoke Test Server Attachment**: `backend/scripts/smoke-test.ts` attaches to the live `:5000` server if running; test isolation to be addressed in Sprint 3A-TESTFIX.
+3. **Headless Browser Driver in Sandbox**: Playwright driver binary auto-download encounters network restrictions in sandbox; manual browser testing at `http://localhost:5173` is used.
+4. **LocalStorage JWT Storage**: Storing JWT in `localStorage` requires rigorous XSS protections (strictly avoiding `dangerouslySetInnerHTML`). For production deployment, httpOnly cookies are recommended.

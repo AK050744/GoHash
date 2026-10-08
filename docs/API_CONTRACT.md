@@ -47,11 +47,11 @@ All API endpoints must conform to the standard response envelope. The frontend c
 | `GET` | `/api/documents/:id` | JWT | Get single document metadata (owner, NOTARY, ADMIN) | **IMPLEMENTED** |
 | `GET` | `/api/documents/:id/file` | JWT | Stream PDF document inline (owner, NOTARY, ADMIN) | **IMPLEMENTED** |
 | `POST` | `/api/notarization/request` | JWT (USER) | Request notary attestation for a document | **IMPLEMENTED** |
-| `GET` | `/api/notarization/pending` | JWT (NOTARY) | List pending notarization requests | PLANNED (Day 9–10) |
-| `POST` | `/api/notarization/:id/approve` | JWT (NOTARY) | Approve request and commit to blockchain | PLANNED (Day 9–10) |
-| `POST` | `/api/notarization/:id/reject` | JWT (NOTARY) | Reject notarization with reason | PLANNED (Day 9–10) |
-| `POST` | `/api/verify` | Public | Verify SHA-256 hash or document against blockchain | PLANNED (Day 11) |
-| `GET` | `/api/blockchain/:documentId` | Public | Retrieve raw on-chain notarization receipt | PLANNED (Day 8–10) |
+| `GET` | `/api/notarization/pending` | JWT (NOTARY) | List pending notarization requests | PLANNED (Sprint 4B) |
+| `POST` | `/api/notarization/:id/approve` | JWT (NOTARY) | Approve request and commit to blockchain | PLANNED (Sprint 4B) |
+| `POST` | `/api/notarization/:id/reject` | JWT (NOTARY) | Reject notarization with reason | PLANNED (Sprint 4B) |
+| `POST` | `/api/verify` | Public | Verify SHA-256 hash or document against blockchain | PLANNED (Sprint 5A) |
+| `GET` | `/api/blockchain/:documentId` | Public | Retrieve raw on-chain notarization receipt | PLANNED (Sprint 4B) |
 
 ---
 
@@ -332,24 +332,24 @@ All API endpoints must conform to the standard response envelope. The frontend c
 
 #### `GET /api/notarization/pending`
 - **Auth**: Bearer JWT (Role: `NOTARY` or `ADMIN`)
-- **Status**: `PLANNED - Day 9-10` (Returns HTTP 501 `NOT_IMPLEMENTED`)
+- **Status**: `PLANNED - Sprint 4B` (Returns HTTP 501 `NOT_IMPLEMENTED`)
 
 #### `POST /api/notarization/:id/approve`
 - **Auth**: Bearer JWT (Role: `NOTARY`)
-- **Status**: `PLANNED - Day 9-10` (Returns HTTP 501 `NOT_IMPLEMENTED`)
+- **Status**: `PLANNED - Sprint 4B` (Returns HTTP 501 `NOT_IMPLEMENTED`)
 
 #### `POST /api/notarization/:id/reject`
 - **Auth**: Bearer JWT (Role: `NOTARY`)
-- **Status**: `PLANNED - Day 9-10` (Returns HTTP 501 `NOT_IMPLEMENTED`)
+- **Status**: `PLANNED - Sprint 4B` (Returns HTTP 501 `NOT_IMPLEMENTED`)
 
 ---
 
-### 5. Verification & Blockchain (PLANNED - Day 8–11)
+### 5. Verification & Blockchain (PLANNED - Sprint 4B & 5A)
 
 #### `POST /api/verify`
 - **Auth**: None
-- **Status**: `PLANNED - Day 11` (Returns HTTP 501 `NOT_IMPLEMENTED`)
+- **Status**: `PLANNED - Sprint 5A` (Returns HTTP 501 `NOT_IMPLEMENTED`)
 
 #### `GET /api/blockchain/:documentId`
 - **Auth**: None
-- **Status**: `PLANNED - Day 8-10` (Returns HTTP 501 `NOT_IMPLEMENTED`)
+- **Status**: `PLANNED - Sprint 4B` (Returns HTTP 501 `NOT_IMPLEMENTED`)
