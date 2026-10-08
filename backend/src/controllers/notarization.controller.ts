@@ -1,12 +1,24 @@
 import { Request, Response } from 'express'
 import { ApiError } from '../utils/ApiError'
 import { asyncHandler } from '../utils/asyncHandler'
+import { NotarizationService } from '../services/notarization.service'
 
 /**
- * POST /api/notarization/request (Planned Day 9-10)
+ * POST /api/notarization/request (USER)
+ * Creates a notarization request for a document owned by the user.
+ * Document must be PENDING and have no active requests.
  */
-export const requestNotarization = asyncHandler(async (_req: Request, _res: Response) => {
-  throw ApiError.notImplemented('Notarization request endpoint planned for Day 9-10')
+export const requestNotarization = asyncHandler(async (req: Request, res: Response) => {
+  const { documentId } = req.body
+  if (!documentId) {
+    throw ApiError.badRequest('documentId is required in request body', 'VALIDATION_ERROR')
+  }
+
+  const notarization = await NotarizationService.requestNotarization(documentId, req.userId!)
+  res.status(201).json({
+    success: true,
+    notarization,
+  })
 })
 
 /**

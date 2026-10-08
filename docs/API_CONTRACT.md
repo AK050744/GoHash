@@ -41,10 +41,12 @@ All API endpoints must conform to the standard response envelope. The frontend c
 | `POST` | `/api/auth/login` | Public | Authenticate user & return signed JWT | **IMPLEMENTED** |
 | `GET` | `/api/auth/me` | JWT | Fetch authenticated user profile | **IMPLEMENTED** |
 | `PATCH` | `/api/auth/wallet` | JWT | Associate public Ethereum wallet with user | **IMPLEMENTED** |
-| `POST` | `/api/documents/upload` | JWT | Upload document file & generate SHA-256 hash | PLANNED (Day 6) |
-| `GET` | `/api/documents` | JWT | List documents belonging to authenticated user | PLANNED (Day 6) |
-| `GET` | `/api/documents/:id` | JWT | Get single document metadata | PLANNED (Day 6) |
-| `POST` | `/api/notarization/request` | JWT | Request notary attestation for a document | PLANNED (Day 9–10) |
+| `POST` | `/api/documents/upload` | JWT (USER) | Upload PDF file & compute SHA-256 hash | **IMPLEMENTED** |
+| `GET` | `/api/documents/stats` | JWT (USER) | Aggregate document counts (total, pending, notarized) | **IMPLEMENTED** |
+| `GET` | `/api/documents` | JWT (USER) | List user documents (newest first, optional ?status=) | **IMPLEMENTED** |
+| `GET` | `/api/documents/:id` | JWT | Get single document metadata (owner, NOTARY, ADMIN) | **IMPLEMENTED** |
+| `GET` | `/api/documents/:id/file` | JWT | Stream PDF document inline (owner, NOTARY, ADMIN) | **IMPLEMENTED** |
+| `POST` | `/api/notarization/request` | JWT (USER) | Request notary attestation for a document | **IMPLEMENTED** |
 | `GET` | `/api/notarization/pending` | JWT (NOTARY) | List pending notarization requests | PLANNED (Day 9–10) |
 | `POST` | `/api/notarization/:id/approve` | JWT (NOTARY) | Approve request and commit to blockchain | PLANNED (Day 9–10) |
 | `POST` | `/api/notarization/:id/reject` | JWT (NOTARY) | Reject notarization with reason | PLANNED (Day 9–10) |
@@ -186,27 +188,147 @@ All API endpoints must conform to the standard response envelope. The frontend c
 
 ---
 
-### 3. Documents (PLANNED - Day 6)
-
+### 3. Documents
+ 
 #### `POST /api/documents/upload`
-- **Auth**: Bearer JWT
-- **Status**: `PLANNED - Day 6` (Returns HTTP 501 `NOT_IMPLEMENTED`)
+- **Auth**: Bearer JWT (`USER`)
+- **Content-Type**: `multipart/form-data`
+- **Form Field**: `file` (or `document`)
+- **Validation**:
+  - File must be provided and <= `MAX_FILE_SIZE_MB` (default 10MB).
+  - File must have MIME `application/pdf` AND start with magic bytes `"%PDF-"`.
+- **Status**: `IMPLEMENTED`
+- **Success (201)**:
+```json
+{
+  "success": true,
+  "document": {
+    "id": "67039a8c1719b2241cfb5678",
+    "originalName": "contract.pdf",
+    "sha256Hash": "a1b2c3d4e5f6...",
+    "status": "PENDING",
+    "createdAt": "2026-10-08T10:00:00.000Z"
+  }
+}
+```
+- **Error Responses**:
+  - `400 Bad Request` (`INVALID_FILE`): Missing file, non-PDF MIME type, or invalid `%PDF-` header.
+  - `400 Bad Request` (`FILE_TOO_LARGE`): File exceeds configured maximum size.
+  - `409 Conflict` (`DUPLICATE_DOCUMENT`): Document with same SHA-256 hash already uploaded by this owner.
+
+#### `GET /api/documents/stats`
+- **Auth**: Bearer JWT (`USER`)
+- **Status**: `IMPLEMENTED`
+- **Success (200)**:
+```json
+{
+  "success": true,
+  "total": 5,
+  "pending": 3,
+  "notarized": 2,
+  "stats": {
+    "total": 5,
+    "pending": 3,
+    "notarized": 2
+  }
+}
+```
 
 #### `GET /api/documents`
-- **Auth**: Bearer JWT
-- **Status**: `PLANNED - Day 6` (Returns HTTP 501 `NOT_IMPLEMENTED`)
+- **Auth**: Bearer JWT (`USER`)
+- **Query Parameters**: `?status=PENDING|APPROVED|REJECTED|NOTARIZED` (optional)
+- **Status**: `IMPLEMENTED`
+- **Success (200)**:
+```json
+{
+  "success": true,
+  "documents": [
+    {
+      "id": "67039a8c1719b2241cfb5678",
+      "originalName": "contract.pdf",
+      "fileName": "67039a8c1719b2241cfb5678.pdf",
+      "mimeType": "application/pdf",
+      "fileSize": 1048576,
+      "sha256Hash": "a1b2c3d4e5f6...",
+      "visibility": "PRIVATE",
+      "status": "PENDING",
+      "ipfsCid": null,
+      "createdAt": "2026-10-08T10:00:00.000Z",
+      "updatedAt": "2026-10-08T10:00:00.000Z"
+    }
+  ]
+}
+```
 
 #### `GET /api/documents/:id`
-- **Auth**: Bearer JWT
-- **Status**: `PLANNED - Day 6` (Returns HTTP 501 `NOT_IMPLEMENTED`)
+- **Auth**: Bearer JWT (`owner`, `NOTARY`, or `ADMIN`)
+- **Status**: `IMPLEMENTED`
+- **Success (200)**:
+```json
+{
+  "success": true,
+  "document": {
+    "id": "67039a8c1719b2241cfb5678",
+    "originalName": "contract.pdf",
+    "fileName": "67039a8c1719b2241cfb5678.pdf",
+    "mimeType": "application/pdf",
+    "fileSize": 1048576,
+    "sha256Hash": "a1b2c3d4e5f6...",
+    "visibility": "PRIVATE",
+    "status": "PENDING",
+    "ipfsCid": null,
+    "ownerId": "67039a8c1719b2241cfb1234",
+    "createdAt": "2026-10-08T10:00:00.000Z",
+    "updatedAt": "2026-10-08T10:00:00.000Z"
+  }
+}
+```
+- **Error Responses**:
+  - `404 Not Found` (`NOT_FOUND`): Document does not exist or user is unauthorized (existence not leaked).
+
+#### `GET /api/documents/:id/file`
+- **Auth**: Bearer JWT (`owner`, `NOTARY`, or `ADMIN`)
+- **Status**: `IMPLEMENTED`
+- **Headers**:
+  - `Content-Type`: `application/pdf`
+  - `Content-Disposition`: `inline; filename="contract.pdf"`
+- **Response**: Binary stream of the stored PDF file.
+- **Error Responses**:
+  - `404 Not Found` (`NOT_FOUND`): Document does not exist or unauthorized.
 
 ---
 
-### 4. Notarization Workflows (PLANNED - Day 9–10)
+### 4. Notarization Workflows
 
 #### `POST /api/notarization/request`
-- **Auth**: Bearer JWT
-- **Status**: `PLANNED - Day 9-10` (Returns HTTP 501 `NOT_IMPLEMENTED`)
+- **Auth**: Bearer JWT (`USER` owner only)
+- **Request Body**:
+```json
+{
+  "documentId": "67039a8c1719b2241cfb5678"
+}
+```
+- **Validation**: Document must be owned by authenticated user, be in `PENDING` status, and have no active request.
+- **Status**: `IMPLEMENTED`
+- **Success (201)**:
+```json
+{
+  "success": true,
+  "notarization": {
+    "id": "67039a8c1719b2241cfb9999",
+    "documentId": "67039a8c1719b2241cfb5678",
+    "status": "REQUESTED",
+    "documentHash": "a1b2c3d4e5f6...",
+    "requestedBy": "67039a8c1719b2241cfb1234",
+    "createdAt": "2026-10-08T10:05:00.000Z"
+  }
+}
+```
+- **Error Responses**:
+  - `400 Bad Request` (`VALIDATION_ERROR`): Missing `documentId`.
+  - `400 Bad Request` (`INVALID_STATUS`): Document is not in `PENDING` status.
+  - `404 Not Found` (`NOT_FOUND`): Document not found or not owned by user.
+  - `409 Conflict` (`DUPLICATE_REQUEST`): Active notarization request already exists.
 
 #### `GET /api/notarization/pending`
 - **Auth**: Bearer JWT (Role: `NOTARY` or `ADMIN`)

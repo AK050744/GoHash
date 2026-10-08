@@ -3,6 +3,8 @@ node_modules/
 dist/
 build/
 .next/
+uploads/
+backend/uploads/
 
 # Environment files
 .env

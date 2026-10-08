@@ -1,4 +1,7 @@
 import http from 'http'
+import crypto from 'crypto'
+import fs from 'fs'
+import path from 'path'
 import mongoose from 'mongoose'
 import app from '../src/app'
 import { connectDB, disconnectDB } from '../src/config/db'
@@ -54,6 +57,36 @@ async function request(
   return { status: res.status, data }
 }
 
+async function uploadFileRequest(
+  path: string,
+  buffer: Buffer,
+  filename: string,
+  mimetype: string,
+  token?: string
+): Promise<{ status: number; data: any; headers: Headers }> {
+  const formData = new FormData()
+  formData.append('file', new Blob([buffer], { type: mimetype }), filename)
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  })
+
+  let data: any = null
+  try {
+    data = await res.json()
+  } catch {
+    data = null
+  }
+
+  return { status: res.status, data, headers: res.headers }
+}
+
 async function isServerRunning(): Promise<boolean> {
   try {
     const res = await fetch(`${BASE_URL}/api/health`)
@@ -88,6 +121,8 @@ async function runSmokeTests() {
   const testPassword = 'Password123!'
   let authToken = ''
   let createdUserId = ''
+  let userBId = ''
+  let uploadedDocId = ''
 
   try {
     // 1. Health check
@@ -102,7 +137,7 @@ async function runSmokeTests() {
       logFail('GET /api/health', err)
     }
 
-    // 2. 404 Not Found error envelope
+    // 2. 404 handler
     try {
       const res = await request('/api/non-existent-route')
       if (res.status === 404 && res.data?.success === false && res.data?.error?.code === 'NOT_FOUND') {
@@ -114,9 +149,9 @@ async function runSmokeTests() {
       logFail('404 Envelope', err)
     }
 
-    // 3. 501 Not Implemented stub
+    // 3. 501 Not Implemented stub (using planned /api/verify)
     try {
-      const res = await request('/api/documents/upload', { method: 'POST', body: {} })
+      const res = await request('/api/verify', { method: 'POST', body: {} })
       if (res.status === 501 && res.data?.success === false && res.data?.error?.code === 'NOT_IMPLEMENTED') {
         logPass('501 Stub Route', `code=${res.data.error.code}`)
       } else {
@@ -138,18 +173,18 @@ async function runSmokeTests() {
         },
       })
 
-      if (res.status === 201 && res.data?.success === true && res.data?.token && res.data?.user?.email === testEmail) {
+      if (res.status === 201 && res.data?.success === true && res.data?.token && res.data?.user?.role === 'USER') {
         authToken = res.data.token
         createdUserId = res.data.user.id
         logPass('POST /api/auth/register', `User ID: ${createdUserId}, role: ${res.data.user.role}`)
       } else {
-        throw new Error(`Expected 201 with token and user, got ${res.status}: ${JSON.stringify(res.data)}`)
+        throw new Error(`Registration failed: ${res.status} - ${JSON.stringify(res.data)}`)
       }
     } catch (err) {
       logFail('POST /api/auth/register', err)
     }
 
-    // 5. Duplicate email rejection
+    // 5. Register: duplicate email
     try {
       const res = await request('/api/auth/register', {
         method: 'POST',
@@ -161,35 +196,34 @@ async function runSmokeTests() {
         },
       })
 
-      if ((res.status === 409 || res.status === 400) && res.data?.success === false) {
-        logPass('Duplicate Email Rejection', `status=${res.status}, code=${res.data.error?.code}`)
+      if (res.status === 409 && res.data?.success === false && res.data?.error?.code === 'EMAIL_ALREADY_EXISTS') {
+        logPass('Duplicate Email Rejection', `status=409, code=${res.data.error.code}`)
       } else {
-        throw new Error(`Expected 409/400 for duplicate email, got ${res.status}: ${JSON.stringify(res.data)}`)
+        throw new Error(`Expected 409 EMAIL_ALREADY_EXISTS, got ${res.status}: ${JSON.stringify(res.data)}`)
       }
     } catch (err) {
       logFail('Duplicate Email Rejection', err)
     }
 
-    // 6. Role in body ignored
-    const roleTamperEmail = `role_tamper_${Date.now()}@example.com`
+    // 6. Register: role escalation ignored
     try {
+      const escalationEmail = `escalate_${Date.now()}@example.com`
       const res = await request('/api/auth/register', {
         method: 'POST',
         body: {
-          name: 'Hacker User',
-          email: roleTamperEmail,
+          name: 'Hacker',
+          email: escalationEmail,
           password: testPassword,
           confirmPassword: testPassword,
-          role: 'ADMIN', // Should be strictly ignored!
+          role: 'ADMIN',
         },
       })
 
       if (res.status === 201 && res.data?.user?.role === 'USER') {
-        logPass('Role In Body Ignored', `Assigned role is strictly "${res.data.user.role}"`)
-        // Clean up immediately
-        await User.deleteOne({ email: roleTamperEmail })
+        logPass('Role In Body Ignored', 'Assigned role is strictly "USER"')
+        await User.deleteOne({ email: escalationEmail })
       } else {
-        throw new Error(`Expected role to remain USER, got: ${res.data?.user?.role}`)
+        throw new Error(`Expected role USER, received: ${res.data?.user?.role}`)
       }
     } catch (err) {
       logFail('Role In Body Ignored', err)
@@ -206,47 +240,46 @@ async function runSmokeTests() {
       })
 
       if (res.status === 200 && res.data?.success === true && res.data?.token) {
-        authToken = res.data.token // update token
         logPass('POST /api/auth/login', 'Received valid JWT token')
       } else {
-        throw new Error(`Expected 200 with JWT, got ${res.status}: ${JSON.stringify(res.data)}`)
+        throw new Error(`Login failed: ${res.status} - ${JSON.stringify(res.data)}`)
       }
     } catch (err) {
       logFail('POST /api/auth/login', err)
     }
 
-    // 8. Wrong password rejected
+    // 8. Login: bad credentials
     try {
       const res = await request('/api/auth/login', {
         method: 'POST',
         body: {
           email: testEmail,
-          password: 'WrongPassword999!',
+          password: 'WrongPassword!',
         },
       })
 
       if (res.status === 401 && res.data?.success === false && res.data?.error?.code === 'INVALID_CREDENTIALS') {
         logPass('Wrong Password Rejection', 'Generic 401 error returned')
       } else {
-        throw new Error(`Expected 401 generic rejection, got ${res.status}: ${JSON.stringify(res.data)}`)
+        throw new Error(`Expected 401 INVALID_CREDENTIALS, got ${res.status}: ${JSON.stringify(res.data)}`)
       }
     } catch (err) {
       logFail('Wrong Password Rejection', err)
     }
 
-    // 9. /me without token
+    // 9. /auth/me without token -> 401
     try {
       const res = await request('/api/auth/me')
       if (res.status === 401 && res.data?.success === false && res.data?.error?.code === 'UNAUTHORIZED') {
         logPass('GET /api/auth/me (No Token)', 'Blocked 401 UNAUTHORIZED')
       } else {
-        throw new Error(`Expected 401, got ${res.status}: ${JSON.stringify(res.data)}`)
+        throw new Error(`Expected 401 UNAUTHORIZED, got ${res.status}: ${JSON.stringify(res.data)}`)
       }
     } catch (err) {
       logFail('GET /api/auth/me (No Token)', err)
     }
 
-    // 10. /me with token
+    // 10. /auth/me with valid token -> 200
     try {
       const res = await request('/api/auth/me', {
         headers: { Authorization: `Bearer ${authToken}` },
@@ -255,13 +288,13 @@ async function runSmokeTests() {
       if (res.status === 200 && res.data?.success === true && res.data?.user?.email === testEmail) {
         logPass('GET /api/auth/me (With Token)', `Fetched user ${res.data.user.email}`)
       } else {
-        throw new Error(`Expected 200 with user, got ${res.status}: ${JSON.stringify(res.data)}`)
+        throw new Error(`Expected 200 with user payload, got ${res.status}: ${JSON.stringify(res.data)}`)
       }
     } catch (err) {
       logFail('GET /api/auth/me (With Token)', err)
     }
 
-    // 11. PATCH /api/auth/wallet
+    // 11. /auth/wallet
     const testWallet = '0x1234567890123456789012345678901234567890'
     try {
       const res = await request('/api/auth/wallet', {
@@ -270,10 +303,10 @@ async function runSmokeTests() {
         body: { walletAddress: testWallet },
       })
 
-      if (res.status === 200 && res.data?.success === true && res.data?.user?.walletAddress === testWallet) {
-        logPass('PATCH /api/auth/wallet', `Wallet stored: ${testWallet}`)
+      if (res.status === 200 && res.data?.success === true && res.data?.user?.walletAddress === testWallet.toLowerCase()) {
+        logPass('PATCH /api/auth/wallet', `Wallet stored: ${res.data.user.walletAddress}`)
       } else {
-        throw new Error(`Expected 200 with walletAddress, got ${res.status}: ${JSON.stringify(res.data)}`)
+        throw new Error(`Expected 200 with wallet, got ${res.status}: ${JSON.stringify(res.data)}`)
       }
     } catch (err) {
       logFail('PATCH /api/auth/wallet', err)
@@ -294,14 +327,195 @@ async function runSmokeTests() {
       logFail("RBAC requireRole('ADMIN')", err)
     }
 
-    // 13. Direct Database & Model Validation Checks
+    // ─── Task 3A: Document Upload, Hashing & Notarization Endpoints ───
+    console.log('\n--- Task 3A: Document Upload, Hashing & Notarization Tests ---')
+    const validPdfBytes = Buffer.from('%PDF-1.4\n%GoHash Smoke Test Document\n1 0 obj\n<< /Title (Test Doc) >>\nendobj\ntrailer\n<<>>\n%%EOF\n')
+    const expectedSha256 = crypto.createHash('sha256').update(validPdfBytes).digest('hex')
+
+    // 13. Valid PDF Upload
+    try {
+      const res = await uploadFileRequest('/api/documents/upload', validPdfBytes, 'sample.pdf', 'application/pdf', authToken)
+      if (res.status === 201 && res.data?.success === true && res.data?.document?.id) {
+        uploadedDocId = res.data.document.id
+        logPass('Valid PDF Upload (POST /api/documents/upload)', `Doc ID: ${uploadedDocId}, status: ${res.data.document.status}`)
+      } else {
+        throw new Error(`Expected 201 Created, got ${res.status}: ${JSON.stringify(res.data)}`)
+      }
+    } catch (err) {
+      logFail('Valid PDF Upload (POST /api/documents/upload)', err)
+    }
+
+    // 14. Independent SHA-256 Hash Match
+    try {
+      const res = await request(`/api/documents/${uploadedDocId}`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      })
+      if (res.status === 200 && res.data?.document?.sha256Hash === expectedSha256) {
+        logPass('Independent SHA-256 Match', `Expected & API Hash: ${expectedSha256}`)
+      } else {
+        throw new Error(`Hash mismatch! Expected ${expectedSha256}, got ${res.data?.document?.sha256Hash}`)
+      }
+    } catch (err) {
+      logFail('Independent SHA-256 Match', err)
+    }
+
+    // 15. Text file renamed .pdf rejected
+    try {
+      const fakePdfBytes = Buffer.from('This is merely plain text without PDF magic bytes')
+      const res = await uploadFileRequest('/api/documents/upload', fakePdfBytes, 'fake.pdf', 'application/pdf', authToken)
+      if (res.status === 400 && res.data?.success === false && res.data?.error?.code === 'INVALID_FILE') {
+        logPass('Text File Renamed .pdf Rejection', `status=400, code=${res.data.error.code}`)
+      } else {
+        throw new Error(`Expected 400 INVALID_FILE, got ${res.status}: ${JSON.stringify(res.data)}`)
+      }
+    } catch (err) {
+      logFail('Text File Renamed .pdf Rejection', err)
+    }
+
+    // 16. Oversized file rejected
+    try {
+      const oversizedBytes = Buffer.alloc((env.MAX_FILE_SIZE_MB + 1) * 1024 * 1024)
+      oversizedBytes.write('%PDF-1.4')
+      const res = await uploadFileRequest('/api/documents/upload', oversizedBytes, 'large.pdf', 'application/pdf', authToken)
+      if (res.status === 400 && res.data?.success === false) {
+        logPass('Oversized File Rejection', `status=400, code=${res.data?.error?.code}`)
+      } else {
+        throw new Error(`Expected 400 rejection for oversized file, got ${res.status}: ${JSON.stringify(res.data)}`)
+      }
+    } catch (err) {
+      logFail('Oversized File Rejection', err)
+    }
+
+    // 17. Duplicate upload rejected with 409 DUPLICATE_DOCUMENT
+    try {
+      const res = await uploadFileRequest('/api/documents/upload', validPdfBytes, 'sample.pdf', 'application/pdf', authToken)
+      if (res.status === 409 && res.data?.success === false && res.data?.error?.code === 'DUPLICATE_DOCUMENT') {
+        logPass('Duplicate Document Rejection', `status=409, code=${res.data.error.code}`)
+      } else {
+        throw new Error(`Expected 409 DUPLICATE_DOCUMENT, got ${res.status}: ${JSON.stringify(res.data)}`)
+      }
+    } catch (err) {
+      logFail('Duplicate Document Rejection', err)
+    }
+
+    // 18. Cross-user isolation: User B cannot read User A's document or file
+    try {
+      const userBEmail = `user_b_${Date.now()}@example.com`
+      const regRes = await request('/api/auth/register', {
+        method: 'POST',
+        body: {
+          name: 'User B',
+          email: userBEmail,
+          password: testPassword,
+          confirmPassword: testPassword,
+        },
+      })
+      const userBToken = regRes.data?.token
+      userBId = regRes.data?.user?.id
+
+      // User B tries GET /api/documents/:id -> 404
+      const resDoc = await request(`/api/documents/${uploadedDocId}`, {
+        headers: { Authorization: `Bearer ${userBToken}` },
+      })
+      // User B tries GET /api/documents/:id/file -> 404
+      const resFile = await request(`/api/documents/${uploadedDocId}/file`, {
+        headers: { Authorization: `Bearer ${userBToken}` },
+      })
+
+      if (
+        resDoc.status === 404 &&
+        resDoc.data?.error?.code === 'NOT_FOUND' &&
+        resFile.status === 404 &&
+        resFile.data?.error?.code === 'NOT_FOUND'
+      ) {
+        logPass('Cross-User Isolation (User B Access Denied)', 'Both document and file returned 404 NOT_FOUND to User B')
+      } else {
+        throw new Error(`Expected 404 NOT_FOUND for User B, got doc=${resDoc.status}, file=${resFile.status}`)
+      }
+    } catch (err) {
+      logFail('Cross-User Isolation (User B Access Denied)', err)
+    }
+
+    // 19. User A file streaming inline
+    try {
+      const fileRes = await fetch(`${BASE_URL}/api/documents/${uploadedDocId}/file`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      })
+      const contentType = fileRes.headers.get('content-type')
+      const arrayBuffer = await fileRes.arrayBuffer()
+      const downloadedBuffer = Buffer.from(arrayBuffer)
+      if (
+        fileRes.status === 200 &&
+        contentType?.includes('application/pdf') &&
+        downloadedBuffer.equals(validPdfBytes)
+      ) {
+        logPass('GET /api/documents/:id/file (Streaming)', `status=200, Content-Type=${contentType}, bytes=${downloadedBuffer.length}`)
+      } else {
+        throw new Error(`Expected 200 PDF stream matching upload bytes, got status=${fileRes.status}, type=${contentType}`)
+      }
+    } catch (err) {
+      logFail('GET /api/documents/:id/file (Streaming)', err)
+    }
+
+    // 20. Notarization Request OK & Duplicate 409
+    try {
+      // First request -> 201 Created
+      const req1 = await request('/api/notarization/request', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}` },
+        body: { documentId: uploadedDocId },
+      })
+
+      if (req1.status === 201 && req1.data?.success === true && req1.data?.notarization?.status === 'REQUESTED') {
+        logPass('POST /api/notarization/request (First Attempt)', `status=201, Notarization ID: ${req1.data.notarization.id}`)
+      } else {
+        throw new Error(`Expected 201 REQUESTED, got ${req1.status}: ${JSON.stringify(req1.data)}`)
+      }
+
+      // Second duplicate request -> 409 Conflict
+      const req2 = await request('/api/notarization/request', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}` },
+        body: { documentId: uploadedDocId },
+      })
+
+      if (req2.status === 409 && req2.data?.success === false && req2.data?.error?.code === 'DUPLICATE_REQUEST') {
+        logPass('POST /api/notarization/request (Duplicate Rejection)', `status=409, code=${req2.data.error.code}`)
+      } else {
+        throw new Error(`Expected 409 DUPLICATE_REQUEST, got ${req2.status}: ${JSON.stringify(req2.data)}`)
+      }
+    } catch (err) {
+      logFail('POST /api/notarization/request', err)
+    }
+
+    // 21. Stats Numbers Correct
+    try {
+      const statsRes = await request('/api/documents/stats', {
+        headers: { Authorization: `Bearer ${authToken}` },
+      })
+      if (
+        statsRes.status === 200 &&
+        statsRes.data?.success === true &&
+        statsRes.data?.total >= 1 &&
+        statsRes.data?.pending >= 1 &&
+        statsRes.data?.notarized === 0
+      ) {
+        logPass('GET /api/documents/stats', `total=${statsRes.data.total}, pending=${statsRes.data.pending}, notarized=${statsRes.data.notarized}`)
+      } else {
+        throw new Error(`Stats mismatch: ${JSON.stringify(statsRes.data)}`)
+      }
+    } catch (err) {
+      logFail('GET /api/documents/stats', err)
+    }
+
+    // 22. Direct Database & Model Validation Checks
     console.log('\n--- Direct Database & Model Integrity Checks ---')
     let testDocId: any = null
     let testNotarizationId: any = null
-    const dummyHash = 'a'.repeat(64)
+    const dummyHash = 'b'.repeat(64)
 
     try {
-      // 13a. Create Document
+      // 22a. Create Document
       const doc = await DocumentModel.create({
         ownerId: new mongoose.Types.ObjectId(createdUserId),
         fileName: 'contract.pdf',
@@ -315,7 +529,7 @@ async function runSmokeTests() {
       testDocId = doc._id
       logPass('Mongoose Document Creation', `Document ID: ${doc._id}`)
 
-      // 13b. Reject duplicate (ownerId, sha256Hash)
+      // 22b. Reject duplicate (ownerId, sha256Hash)
       let duplicateRejected = false
       try {
         await DocumentModel.create({
@@ -339,7 +553,7 @@ async function runSmokeTests() {
         throw new Error('Expected duplicate (ownerId, sha256Hash) to be rejected with code 11000')
       }
 
-      // 13c. Reject invalid wallet address format
+      // 22c. Reject invalid wallet address format
       let badWalletRejected = false
       try {
         await User.create({
@@ -360,7 +574,7 @@ async function runSmokeTests() {
         throw new Error('Expected invalid wallet address to fail Mongoose schema validation')
       }
 
-      // 13d. Create Notarization
+      // 22d. Create Notarization
       const notarization = await Notarization.create({
         documentId: testDocId,
         requestedBy: new mongoose.Types.ObjectId(createdUserId),
@@ -372,11 +586,20 @@ async function runSmokeTests() {
     } catch (err) {
       logFail('Model Integrity Checks', err)
     } finally {
-      // 14. Data cleanup
+      // 23. Data cleanup
       if (testDocId) await DocumentModel.deleteOne({ _id: testDocId })
       if (testNotarizationId) await Notarization.deleteOne({ _id: testNotarizationId })
+      if (uploadedDocId) {
+        await DocumentModel.deleteOne({ _id: uploadedDocId })
+        await Notarization.deleteMany({ documentId: uploadedDocId })
+        const diskFile = path.resolve(process.cwd(), 'uploads', `${uploadedDocId}.pdf`)
+        if (fs.existsSync(diskFile)) {
+          fs.unlinkSync(diskFile)
+        }
+      }
       if (createdUserId) await User.deleteOne({ _id: createdUserId })
-      logPass('Test Data Cleanup', 'Cleaned up temporary users, documents, and notarizations')
+      if (userBId) await User.deleteOne({ _id: userBId })
+      logPass('Test Data Cleanup', 'Cleaned up temporary users, documents, disk uploads, and notarizations')
     }
   } finally {
     // Teardown embedded server if started

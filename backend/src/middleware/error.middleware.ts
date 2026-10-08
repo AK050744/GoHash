@@ -27,6 +27,28 @@ export function errorHandler(
     return
   }
 
+  // 1b. Multer file upload errors
+  if (err.name === 'MulterError' || err.code === 'LIMIT_FILE_SIZE') {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'FILE_TOO_LARGE',
+          message: `File size exceeds the limit of ${env.MAX_FILE_SIZE_MB}MB`,
+        },
+      })
+      return
+    }
+    res.status(400).json({
+      success: false,
+      error: {
+        code: 'INVALID_FILE',
+        message: err.message || 'File upload error',
+      },
+    })
+    return
+  }
+
   // 2. Zod validation error
   if (err instanceof ZodError || err.name === 'ZodError') {
     const formattedMessage = err.issues
