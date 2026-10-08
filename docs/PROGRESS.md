@@ -10,8 +10,8 @@
 | **Sprint 3A** | `backend/` (Document upload, hashing & request) | **Complete** | 27/27 smoke assertions passing with Docker Mongo running |
 | **Sprint 3A-TESTFIX** | `backend/` (Test isolation & standalone runner) | **Complete** | Ephemeral port isolation, test DB isolation, fail-fast Mongo check |
 | **Sprint 3A-DBFIX** | `backend/` (Dev server fail-fast DB & test route purge) | **Complete** | Removed in-memory fallback (exits code 1 if down), purged test-admin route |
-| **Sprint 3B** | `frontend/` (Document upload & management pages) | **Not Started** | Upload page, document table, and 3 dashboard stat cards |
-| **Sprint 4A & 4B** | Full-stack (Blockchain integration & notary actions) | **Pending** | Local node deployment, read-only RPC, MetaMask signing |
+| **Sprint 3B** | `frontend/` (Document upload & management pages) | **Complete** | Upload page, document table, document detail with PDF streaming, and 3 dashboard stat cards |
+| **Sprint 4A & 4B** | Full-stack (Blockchain integration & notary actions) | **Next** | Local node deployment, read-only RPC, MetaMask signing |
 | **Sprint 5A & 5B** | Full-stack (Verification engine, admin & certificate) | **Pending** | Public `/api/verify`, admin management, verifiable certificate |
 | **Sprint 6A & 6B** | Full-stack (Security hardening & final documentation)| **Pending** | Rate limiting, audit, and project presentation package |
 
@@ -86,18 +86,37 @@ Local database services run through Docker container `gohash-mongo` using the of
 - **URI Credential Masking**: Automatically masks user credentials (`mongodb://user:***@host`) before logging connection errors.
 - **Production Route Purge**: Removed test-only `/test-admin` route from `src/routes/auth.routes.ts`. The smoke test dynamically mounts a throwaway RBAC test route on the test express instance before listening.
 
+### Sprint 3B (Frontend Document & Dashboard Real Backend Integration)
+- **API Wrapper Extensions (`lib/api.ts`)**:
+  - Implemented `upload()` using `XMLHttpRequest` with progress tracking (`onProgress`), FormData without hardcoded Content-Type headers, Authorization Bearer token attachment, and unified `ApiError` mapping.
+  - Implemented `getBlob()` for authenticated streaming of binary PDF documents (`GET /api/documents/:id/file`) using the stored JWT.
+- **Strict TypeScript API Contracts (`types/index.ts`)**:
+  - Added `Document`, `DocumentStatus`, `DocumentStats`, `DocumentStatsResponse`, `DocumentListResponse`, `DocumentDetailResponse`, `DocumentUploadResponse`, and `NotarizationRequestResponse` matching actual backend controller responses.
+- **Upload Page (`/upload`)**:
+  - Client-side validation: PDF format and extension verification, 10MB size ceiling.
+  - Interactive drag-and-drop zone with real progress tracking bar.
+  - Server-computed SHA-256 hash display with one-click copy button, StatusBadge, "View document" link, and "Upload another" reset flow.
+  - Error mapping from API codes: `INVALID_FILE` ("Not a valid PDF"), `FILE_TOO_LARGE` ("File exceeds 10 MB"), `DUPLICATE_DOCUMENT` ("You have already uploaded this exact file"). Zero client-side hashing (strictly server-side).
+- **My Documents Library (`/documents`)**:
+  - Full document table rendering original filename, truncated SHA-256 (`first 8...last 6`) with clipboard copy, status badge, formatted upload timestamp, and view action.
+  - URL query-synced status filter (`?status=PENDING|APPROVED|REJECTED|NOTARIZED|All`).
+  - Loading skeleton table, empty state with direct upload CTA, and error alert with retry button.
+- **Document Detail Page (`/documents/:id`)**:
+  - Full metadata inspection: document name, document ID, full SHA-256 with copy button, upload timestamp, status badge, and formatted file size.
+  - Placeholder rows for Notary, Notary wallet, Timestamp, Transaction hash, Contract address, and IPFS CID displaying "Not notarized yet".
+  - Authenticated "Open PDF" button streaming the document via `getBlob` and opening via `URL.createObjectURL` in a new tab with automatic 60s memory revocation.
+  - "Request Notarization" workflow with confirmation dialog, POST `/api/notarization/request`, disabled button on in-flight or submitted request, and duplicate request detection (`409 DUPLICATE_REQUEST`).
+  - Friendly 404 "Document not found" screen when non-existent or unauthorized.
+- **Dashboard (`/dashboard`)**:
+  - Exactly 3 StatCards connected to `GET /api/documents/stats`: Total Documents, Pending Notarization, Notarized (removed "Uploaded" card).
+  - Skeletons during loading; retry button on error; no permanent "—".
+  - 5 most recent documents displayed with status badges, truncated hash copy, and direct links.
+
 ---
 
 ## Remaining Backlog
 
-### Sprint 3B (Frontend Document & Dashboard Pages)
-- [ ] **Document Upload Page (`/upload`)**: Drag-and-drop PDF upload component sending multipart data to `POST /api/documents/upload`; displays server-computed SHA-256 hash.
-- [ ] **User Dashboard (`/dashboard`)**: Connect 3 stats cards matching `GET /api/documents/stats`: `Total`, `Pending`, `Notarized`.
-- [ ] **Documents Library (`/documents`)**: Document list and table with status badges (`PENDING`, `APPROVED`, `REJECTED`, `NOTARIZED`), search, and status filter.
-- [ ] **Document Detail (`/documents/:id`)**: Document inspection view displaying hash, timestamp, status, and inline PDF view (`/api/documents/:id/file`).
-- [ ] **Profile Page (`/profile`)**: User information display and MetaMask wallet connection triggering `PATCH /api/auth/wallet`.
-
-### Sprint 4A (Blockchain Environment & Read-Only RPC Provider)
+### Sprint 4A (Blockchain Environment & Read-Only RPC Provider) — NEXT
 - [ ] Fix 2 TypeScript compilation errors in `blockchain/scripts/deploy-local.ts`.
 - [ ] Run Hardhat local node and deploy `DocumentNotary.sol` to record contract address.
 - [ ] Implement backend read-only JSON-RPC provider in `backend/src/services/blockchain.service.ts` using `ethers.JsonRpcProvider`.
@@ -177,3 +196,4 @@ npm run build
 1. **`blockchain/scripts/deploy-local.ts` TypeScript Errors**: Contains 2 TypeScript errors on lines 55 and 65 (`Property 'addNotary' does not exist on type 'BaseContract'` and `Property 'notarize' does not exist on type 'BaseContract'`), to be fixed prior to Sprint 4.
 2. **Headless Browser Driver in Sandbox**: Playwright driver binary auto-download encounters network restrictions in sandbox; manual browser testing at `http://localhost:5173` is used.
 3. **LocalStorage JWT Storage**: Storing JWT in `localStorage` requires rigorous XSS protections (strictly avoiding `dangerouslySetInnerHTML`). For production deployment, httpOnly cookies are recommended.
+4. **Document Details Notarization Request State**: Document details do not include notarization request state yet (planned for Sprint 4A).
