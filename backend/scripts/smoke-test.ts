@@ -4,18 +4,33 @@ import fs from 'fs'
 import path from 'path'
 import mongoose from 'mongoose'
 import app from '../src/app'
-import { connectDB, disconnectDB } from '../src/config/db'
 import { env } from '../src/config/env'
 import { User } from '../src/models/User'
 import { DocumentModel } from '../src/models/Document'
 import { Notarization } from '../src/models/Notarization'
 
-const TEST_PORT = env.PORT || 5000
-const BASE_URL = `http://127.0.0.1:${TEST_PORT}`
-
 let server: http.Server | null = null
+let BASE_URL = ''
 let testsPassed = 0
 let testsFailed = 0
+
+const MONGODB_URI_TEST = process.env.MONGODB_URI_TEST || 'mongodb://localhost:27017/gohash_test'
+
+function getDatabaseName(uri: string): string {
+  try {
+    const parsed = new URL(uri)
+    return parsed.pathname.replace(/^\//, '').split('?')[0]
+  } catch {
+    const match = uri.match(/\/([^/?]+)(\?|$)/)
+    return match ? match[1] : ''
+  }
+}
+
+const dbName = getDatabaseName(MONGODB_URI_TEST)
+if (!dbName || !dbName.endsWith('_test')) {
+  console.error(`Refusing to run smoke test: database name "${dbName}" in MONGODB_URI_TEST must end with "_test".`)
+  process.exit(1)
+}
 
 function logPass(name: string, detail = '') {
   testsPassed++
@@ -87,35 +102,46 @@ async function uploadFileRequest(
   return { status: res.status, data, headers: res.headers }
 }
 
-async function isServerRunning(): Promise<boolean> {
-  try {
-    const res = await fetch(`${BASE_URL}/api/health`)
-    return res.status === 200
-  } catch {
-    return false
-  }
-}
-
 async function runSmokeTests() {
+  mongoose.connection.removeAllListeners('disconnected')
+  mongoose.connection.removeAllListeners('error')
+
+  // Check MongoDB connectivity and fail immediately if not reachable
+  try {
+    await mongoose.connect(MONGODB_URI_TEST, { serverSelectionTimeoutMS: 2000 })
+  } catch (_err) {
+    console.error(`MongoDB not reachable at ${MONGODB_URI_TEST}. Start it with: docker start gohash-mongo`)
+    process.exit(1)
+  }
+
   console.log('\n========================================')
   console.log('       GoHash Backend Smoke Test        ')
   console.log('========================================\n')
+  console.log(`Database: ${dbName}\n`)
 
-  const alreadyRunning = await isServerRunning()
+  // Drop test database at the START of the run to prevent interference from earlier runs
+  await mongoose.connection.dropDatabase()
 
-  if (alreadyRunning) {
-    console.log(`ℹ️  Targeting existing active server on ${BASE_URL}`)
-    await connectDB()
-  } else {
-    console.log(`ℹ️  No active server detected. Starting embedded server on port ${TEST_PORT}...`)
-    await connectDB()
-    await new Promise<void>((resolve) => {
-      server = app.listen(TEST_PORT, () => {
-        resolve()
-      })
-    })
-    console.log(`🚀 Embedded test server running on ${BASE_URL}`)
+  // Ensure unique indexes (e.g. compound index on ownerId+sha256Hash, email) are built immediately
+  await Promise.all([
+    User.init(),
+    DocumentModel.init(),
+    Notarization.init(),
+  ])
+
+  // Spin up isolated test server on random free port (listen(0))
+  server = app.listen(0)
+  await new Promise<void>((resolve, reject) => {
+    server!.on('listening', () => resolve())
+    server!.on('error', (err) => reject(err))
+  })
+
+  const address = server.address()
+  if (!address || typeof address === 'string') {
+    throw new Error('Failed to obtain ephemeral server port')
   }
+  BASE_URL = `http://127.0.0.1:${address.port}`
+  console.log(`🚀 Isolated test server running on ${BASE_URL}\n`)
 
   const testEmail = `smoke_test_${Date.now()}@example.com`
   const testPassword = 'Password123!'
@@ -592,9 +618,18 @@ async function runSmokeTests() {
       if (uploadedDocId) {
         await DocumentModel.deleteOne({ _id: uploadedDocId })
         await Notarization.deleteMany({ documentId: uploadedDocId })
-        const diskFile = path.resolve(process.cwd(), 'uploads', `${uploadedDocId}.pdf`)
-        if (fs.existsSync(diskFile)) {
-          fs.unlinkSync(diskFile)
+        const diskFiles = [
+          path.resolve(process.cwd(), 'uploads', `${uploadedDocId}.pdf`),
+          path.resolve(__dirname, '../uploads', `${uploadedDocId}.pdf`),
+        ]
+        for (const diskFile of diskFiles) {
+          if (fs.existsSync(diskFile)) {
+            try {
+              fs.unlinkSync(diskFile)
+            } catch {
+              // ignore
+            }
+          }
         }
       }
       if (createdUserId) await User.deleteOne({ _id: createdUserId })
@@ -602,14 +637,37 @@ async function runSmokeTests() {
       logPass('Test Data Cleanup', 'Cleaned up temporary users, documents, disk uploads, and notarizations')
     }
   } finally {
-    // Teardown embedded server if started
+    // Teardown isolated test server if started
     if (server) {
       await new Promise<void>((resolve) => {
         server?.close(() => resolve())
       })
-      console.log('🛑 Embedded test server stopped.')
+      console.log('🛑 Isolated test server stopped.')
     }
-    await disconnectDB()
+
+    // Teardown lingering disk upload file if any
+    if (uploadedDocId) {
+      const diskFiles = [
+        path.resolve(process.cwd(), 'uploads', `${uploadedDocId}.pdf`),
+        path.resolve(__dirname, '../uploads', `${uploadedDocId}.pdf`),
+      ]
+      for (const diskFile of diskFiles) {
+        if (fs.existsSync(diskFile)) {
+          try {
+            fs.unlinkSync(diskFile)
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+
+    // Drop gohash_test database at the end of the run and disconnect
+    if (mongoose.connection.readyState === 1) {
+      await mongoose.connection.dropDatabase()
+      await mongoose.disconnect()
+      console.log('🔌 Test database dropped and disconnected.')
+    }
   }
 
   console.log('\n========================================')

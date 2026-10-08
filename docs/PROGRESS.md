@@ -8,7 +8,7 @@
 | **Sprint 1A & 1B** | `backend/` (Express foundation & JWT auth / RBAC) | **Complete** | Mongoose models, Zod validation, JWT auth, role middleware |
 | **Sprint 2A & 2B** | `frontend/` (Layout shell & Auth UI integration) | **Complete** | Dark theme UI kit, route guards, `/login`, `/register`, `/403` |
 | **Sprint 3A** | `backend/` (Document upload, hashing & request) | **Complete** | 27/27 smoke assertions passing with Docker Mongo running |
-| **Sprint 3A-TESTFIX** | `backend/` (Test isolation & standalone runner) | **Pending** | Isolate smoke test runner from live server instance |
+| **Sprint 3A-TESTFIX** | `backend/` (Test isolation & standalone runner) | **Complete** | Ephemeral port isolation, test DB isolation, fail-fast Mongo check |
 | **Sprint 3B** | `frontend/` (Document upload & management pages) | **Not Started** | Upload page, document table, and 3 dashboard stat cards |
 | **Sprint 4A & 4B** | Full-stack (Blockchain integration & notary actions) | **Pending** | Local node deployment, read-only RPC, MetaMask signing |
 | **Sprint 5A & 5B** | Full-stack (Verification engine, admin & certificate) | **Pending** | Public `/api/verify`, admin management, verifiable certificate |
@@ -73,12 +73,16 @@ Local database services run through Docker container `gohash-mongo` using the of
 - **Notarization Request**: `POST /api/notarization/request` allows owners of `PENDING` documents to request attestation (`status: "REQUESTED"`); duplicate requests rejected with `409 DUPLICATE_REQUEST`.
 - **Smoke Tests**: 27/27 automated assertions passing in `backend/scripts/smoke-test.ts` with Mongo running.
 
+### Sprint 3A-TESTFIX (Backend Test Isolation & Standalone Runner)
+- **Port Isolation**: Smoke test runner imports `app` from `src/app.ts` and listens on an ephemeral free port (`listen(0)`), completely detached from the development server on `:5000`.
+- **Database Isolation**: Connects to `MONGODB_URI_TEST` (`mongodb://localhost:27017/gohash_test`), guaranteeing no interference with development data. Enforces `_test` suffix safety check.
+- **Fail-Fast Mongo Connectivity**: Replaced silent in-memory MongoDB fallback with an immediate fail-fast error directing the operator to start Docker Mongo (`docker start gohash-mongo`).
+- **Clean Teardown**: Drops the `gohash_test` database at the start and end of test runs, and unlinks any test files written to `backend/uploads/`.
+- **Error Stack Sanitization**: Removed `stack` traces from 500 error response bodies across all environments, logging stack traces exclusively to the server console.
+
 ---
 
 ## Remaining Backlog
-
-### Sprint 3A-TESTFIX (Backend Test Isolation)
-- [ ] Configure `backend/scripts/smoke-test.ts` to spin up an isolated test port and ephemeral database connection rather than attaching to the active development `:5000` server.
 
 ### Sprint 3B (Frontend Document & Dashboard Pages)
 - [ ] **Document Upload Page (`/upload`)**: Drag-and-drop PDF upload component sending multipart data to `POST /api/documents/upload`; displays server-computed SHA-256 hash.
@@ -121,6 +125,7 @@ Local database services run through Docker container `gohash-mongo` using the of
 ## How to Run
 
 ### 1. Start MongoDB (Docker)
+Ensure the MongoDB container is running:
 ```powershell
 docker start gohash-mongo
 # or using compose:
@@ -145,11 +150,12 @@ Frontend runs at `http://localhost:5173`.
 
 ### 4. Verification Commands
 ```powershell
-# Backend typecheck
+# Backend typecheck (0 errors)
 cd backend
 npm run typecheck
 
-# Backend smoke test (ensure Docker Mongo is running)
+# Backend isolated smoke test (requires Docker Mongo running)
+# Spawns isolated server on ephemeral port (listen(0)) and connects to MONGODB_URI_TEST (gohash_test)
 npm run test:smoke
 
 # Frontend build & lint
@@ -163,6 +169,5 @@ npm run build
 ## Known Issues
 
 1. **`blockchain/scripts/deploy-local.ts` TypeScript Errors**: Contains 2 TypeScript errors on lines 55 and 65 (`Property 'addNotary' does not exist on type 'BaseContract'` and `Property 'notarize' does not exist on type 'BaseContract'`), to be fixed prior to Sprint 4.
-2. **Smoke Test Server Attachment**: `backend/scripts/smoke-test.ts` attaches to the live `:5000` server if running; test isolation to be addressed in Sprint 3A-TESTFIX.
-3. **Headless Browser Driver in Sandbox**: Playwright driver binary auto-download encounters network restrictions in sandbox; manual browser testing at `http://localhost:5173` is used.
-4. **LocalStorage JWT Storage**: Storing JWT in `localStorage` requires rigorous XSS protections (strictly avoiding `dangerouslySetInnerHTML`). For production deployment, httpOnly cookies are recommended.
+2. **Headless Browser Driver in Sandbox**: Playwright driver binary auto-download encounters network restrictions in sandbox; manual browser testing at `http://localhost:5173` is used.
+3. **LocalStorage JWT Storage**: Storing JWT in `localStorage` requires rigorous XSS protections (strictly avoiding `dangerouslySetInnerHTML`). For production deployment, httpOnly cookies are recommended.

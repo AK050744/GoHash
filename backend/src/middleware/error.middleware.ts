@@ -108,13 +108,12 @@ export function errorHandler(
   }
 
   // 6. Generic unhandled error (500)
-  const isDev = env.NODE_ENV === 'development'
+  console.error(err.stack || err)
   res.status(500).json({
     success: false,
     error: {
       code: 'INTERNAL_SERVER_ERROR',
       message: 'Internal server error',
-      ...(isDev && { stack: err.stack }),
     },
   })
 }
