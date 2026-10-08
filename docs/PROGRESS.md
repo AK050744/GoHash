@@ -27,6 +27,19 @@
 - Core UI kit: `Button`, `Card`, `StatCard`, `StatusBadge`, `EmptyState`, `Spinner`, `Alert`.
 - Production build (`npm run build`) and ESLint (`npm run lint`) clean with zero errors and zero warnings.
 
+### 4. Document Management & Notarization Request (Task 3A - Day 6)
+- **Multer Memory Storage Upload**: Configured memory-based multipart upload with size limits derived from `MAX_FILE_SIZE_MB`.
+- **Validation**: Enforced strict MIME checking (`application/pdf`) and binary magic byte validation (starts with `"%PDF-"`), rejecting text files or non-PDFs with `400 INVALID_FILE`.
+- **SHA-256 Hashing**: Computed cryptographic hash with Node crypto buffer hashing (`services/hash.service.ts`).
+- **Disk Storage Security**: Saved files to `backend/uploads/<documentId>.pdf` without exposing user-supplied filenames in file paths; user filename preserved in `originalName`.
+- **Duplicate Document Guard**: Rejected identical uploads by the same owner with `409 DUPLICATE_DOCUMENT`.
+- **Document Stats**: Implemented `GET /api/documents/stats` registered before `/:id` returning `{ total, pending, notarized }`.
+- **Ownership Isolation**: `GET /api/documents/:id` and `GET /api/documents/:id/file` restrict access to owner, NOTARY, or ADMIN, returning `404 NOT_FOUND` to unauthorized callers to avoid leaking document existence.
+- **Inline Streaming**: `GET /api/documents/:id/file` streams PDF inline with proper `Content-Disposition`.
+- **Notarization Request**: `POST /api/notarization/request` allows document owners to submit `PENDING` documents for attestation, creating `Notarization` records with status `REQUESTED` and rejecting duplicates with `409 DUPLICATE_REQUEST`.
+- **Smoke Tests**: Extended `backend/scripts/smoke-test.ts` to 27 automated tests passing with 0 failures, covering upload, hash verification, MIME validation, cross-user isolation, file streaming, and notarization requests.
+- **Contract & Docs**: Synchronized [docs/API_CONTRACT.md](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/docs/API_CONTRACT.md) with updated request/response definitions.
+
 ---
 
 ## How to Run
