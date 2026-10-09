@@ -1,4 +1,4 @@
-# DocumentNotary Contract Interface
+*# DocumentNotary Contract Interface
 
 Derived exclusively from `blockchain/contracts/DocumentNotary.sol` (Solidity 0.8.24).
 All names used in backend code are the exact names from this document.

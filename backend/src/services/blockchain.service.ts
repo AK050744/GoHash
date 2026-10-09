@@ -139,6 +139,12 @@ export class BlockchainService {
   ): Promise<ReceiptVerification> {
     const provider = getProvider()
 
+    // Fetch the transaction itself first to verify existence on chain
+    const tx = await provider.getTransaction(txHash)
+    if (!tx) {
+      return { valid: false, reason: 'TX_NOT_FOUND: Transaction not found on chain' }
+    }
+
     // Fetch receipt (null = not yet mined)
     const receipt = await provider.getTransactionReceipt(txHash)
     if (!receipt) {
@@ -158,12 +164,6 @@ export class BlockchainService {
         valid:  false,
         reason: `WRONG_CONTRACT: receipt.to=${receiptTo}, expected=${expectedAddr}`,
       }
-    }
-
-    // Fetch the transaction itself to verify sender and chainId
-    const tx = await provider.getTransaction(txHash)
-    if (!tx) {
-      return { valid: false, reason: 'TX_NOT_FOUND' }
     }
 
     // Verify sender matches the notary's linked wallet
@@ -228,12 +228,25 @@ export class BlockchainService {
       }
     }
 
+    // Read on-chain timestamp from block: proves the hash was recorded no later than this time
+    let blockTimestamp = foundEvent.timestamp
+    if (receipt.blockNumber) {
+      try {
+        const block = await provider.getBlock(receipt.blockNumber)
+        if (block) {
+          blockTimestamp = block.timestamp
+        }
+      } catch {
+        // Fallback to event block timestamp if block fetch is unavailable
+      }
+    }
+
     return {
       valid:        true,
       blockNumber:  receipt.blockNumber,
       notary:       foundEvent.notary,
       documentHash: foundEvent.documentHash,
-      timestamp:    foundEvent.timestamp,
+      timestamp:    blockTimestamp,
     }
   }
 

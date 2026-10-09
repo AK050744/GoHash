@@ -23,8 +23,9 @@ export const requestNotarization = asyncHandler(async (req: Request, res: Respon
 })
 
 /**
- * GET /api/notarization/pending (NOTARY, ADMIN)
- * Returns all REQUESTED notarizations with document + owner info.
+ * GET /api/notarization/pending (NOTARY)
+ * Returns all REQUESTED notarizations with document {id, originalName, sha256Hash, createdAt}
+ * and owner {name} (no email).
  */
 export const getPendingNotarizations = asyncHandler(async (_req: Request, res: Response) => {
   const notarizations = await NotarizationService.getPendingNotarizations()
@@ -32,7 +33,7 @@ export const getPendingNotarizations = asyncHandler(async (_req: Request, res: R
 })
 
 /**
- * GET /api/notarization/:id (NOTARY, ADMIN, or the requesting owner)
+ * GET /api/notarization/:id (NOTARY, or the requesting owner; others 404)
  * Returns a single notarization record.
  */
 export const getNotarizationById = asyncHandler(async (req: Request, res: Response) => {
@@ -46,13 +47,14 @@ export const getNotarizationById = asyncHandler(async (req: Request, res: Respon
 
 /**
  * POST /api/notarization/:id/reject (NOTARY)
- * Body: { reason: string } (required)
+ * Body: { reason: string } (required -> 400 REASON_REQUIRED)
+ * Only allowed from REQUESTED or APPROVED.
  * Sets Notarization → REJECTED and Document → REJECTED.
  */
 export const rejectNotarization = asyncHandler(async (req: Request, res: Response) => {
   const { reason } = req.body
-  if (!reason || !reason.trim()) {
-    throw ApiError.badRequest('reason is required', 'VALIDATION_ERROR')
+  if (!reason || typeof reason !== 'string' || !reason.trim()) {
+    throw new ApiError(400, 'REASON_REQUIRED', 'reason is required')
   }
 
   const notarization = await NotarizationService.rejectNotarization(
@@ -65,36 +67,40 @@ export const rejectNotarization = asyncHandler(async (req: Request, res: Respons
 
 /**
  * POST /api/notarization/:id/approve (NOTARY)
- * Precondition checks then sets APPROVED. Returns contract call args for frontend.
- * Error codes:
+ * Allowed from REQUESTED, APPROVED (retry), or FAILED.
+ * Precondition checks:
  *   400 WALLET_NOT_LINKED         — notary has no linked wallet
  *   403 NOTARY_NOT_AUTHORIZED_ON_CHAIN — wallet not authorized on contract
  *   400 OWNER_WALLET_REQUIRED     — owner has no linked wallet
  *   409 ALREADY_NOTARIZED         — hash already on-chain
+ * Sets APPROVED and returns { success, contractAddress, chainId, abi, method, args }.
  */
 export const approveNotarization = asyncHandler(async (req: Request, res: Response) => {
   const result = await NotarizationService.approveNotarization(req.params.id, req.userId!)
-  sendSuccess(res, result, 200)
+  res.status(200).json(result)
 })
 
 /**
- * POST /api/notarization/:id/confirm (NOTARY)
+ * POST /api/notarization/:id/confirm (NOTARY who owns the request)
  * Body: { transactionHash: string }
- * Verifies the on-chain receipt. Sets CONFIRMED + Document NOTARIZED on success.
- * Returns 202 TX_PENDING if not yet mined.
- * Sets FAILED on reverted tx.
- * Returns 422 VERIFICATION_FAILED on any mismatch.
+ * Validates hash format.
+ * Returns 202 { status: "TX_PENDING" } if not mined yet.
+ * On success: sets CONFIRMED, Document NOTARIZED.
+ * Reverted tx: sets FAILED with failureReason.
+ * Other mismatch: 422 VERIFICATION_FAILED with specific reason.
+ * Idempotent 200 when confirming an already CONFIRMED request with the same hash.
  */
 export const confirmNotarization = asyncHandler(async (req: Request, res: Response) => {
   const { transactionHash } = req.body
-  if (!transactionHash || typeof transactionHash !== 'string') {
-    throw ApiError.badRequest('transactionHash is required', 'VALIDATION_ERROR')
+  if (!transactionHash || typeof transactionHash !== 'string' || !/^0x[a-fA-F0-9]{64}$/.test(transactionHash)) {
+    throw ApiError.badRequest('Invalid transaction hash format', 'VALIDATION_ERROR')
   }
 
   const { status, body } = await NotarizationService.confirmNotarization(
     req.params.id,
+    req.userId!,
     transactionHash
   )
 
-  res.status(status).json({ success: true, ...body })
+  res.status(status).json(body)
 })

@@ -164,7 +164,9 @@ export class DocumentService {
           blockNumber:     notarizationDoc.blockNumber ?? null,
           notaryWallet:    notarizationDoc.notaryWallet ?? null,
           contractAddress: notarizationDoc.contractAddress ?? null,
+          // on-chain timestamp: proves hash was recorded no later than this time
           timestamp:       notarizationDoc.onChainTimestamp ?? null,
+          rejectionReason: notarizationDoc.rejectionReason ?? null,
         }
       : null
 

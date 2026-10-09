@@ -8,8 +8,8 @@ import { DocumentModel } from '../models/Document'
 import { BlockchainService } from '../services/blockchain.service'
 
 /**
- * GET /api/blockchain/:documentId (owner, NOTARY, ADMIN)
- * Returns stored notarization result plus the live on-chain record.
+ * GET /api/blockchain/:documentId (owner, NOTARY, ADMIN; others 404)
+ * Returns { stored notarization, onChainRecord from getRecord } or onChainRecord null.
  */
 export const getBlockchainDocument = asyncHandler(async (req: Request, res: Response) => {
   const { documentId } = req.params
@@ -37,37 +37,44 @@ export const getBlockchainDocument = asyncHandler(async (req: Request, res: Resp
     .sort({ createdAt: -1 })
     .lean()
 
-  // Query live on-chain state
-  let onChain: Record<string, unknown> | null = null
+  // Query live on-chain state via read-only provider
+  let onChainRecord: Record<string, unknown> | null = null
   try {
     const record = await BlockchainService.getRecord(doc.sha256Hash)
     if (record.exists) {
-      onChain = {
+      onChainRecord = {
         exists:       true,
         documentHash: record.documentHash,
         ipfsCid:      record.ipfsCid,
         owner:        record.owner,
         notary:       record.notary,
+        // on-chain timestamp: proves hash was recorded no later than this time
         timestamp:    record.timestamp,
       }
     } else {
-      onChain = { exists: false }
+      onChainRecord = null
     }
   } catch {
-    // Node unreachable or contract not deployed — return stored data with null onChain
-    onChain = null
+    // Node unreachable or contract not deployed — return stored data with null onChainRecord
+    onChainRecord = null
   }
 
   const stored = storedNotarization
     ? {
-        id:              storedNotarization._id.toString(),
-        status:          storedNotarization.status,
-        transactionHash: storedNotarization.transactionHash ?? null,
-        blockNumber:     storedNotarization.blockNumber ?? null,
-        notaryWallet:    storedNotarization.notaryWallet ?? null,
-        contractAddress: storedNotarization.contractAddress ?? null,
-        chainId:         storedNotarization.chainId ?? null,
+        id:               storedNotarization._id.toString(),
+        documentId:       storedNotarization.documentId.toString(),
+        documentHash:     storedNotarization.documentHash,
+        status:           storedNotarization.status,
+        transactionHash:  storedNotarization.transactionHash ?? null,
+        blockNumber:      storedNotarization.blockNumber ?? null,
+        notaryWallet:     storedNotarization.notaryWallet ?? null,
+        contractAddress:  storedNotarization.contractAddress ?? null,
+        chainId:          storedNotarization.chainId ?? null,
+        // on-chain timestamp: proves hash was recorded no later than this time
+        timestamp:        storedNotarization.onChainTimestamp ?? null,
         onChainTimestamp: storedNotarization.onChainTimestamp ?? null,
+        rejectionReason:  storedNotarization.rejectionReason ?? null,
+        failureReason:    storedNotarization.failureReason ?? null,
       }
     : null
 
@@ -79,6 +86,8 @@ export const getBlockchainDocument = asyncHandler(async (req: Request, res: Resp
       ipfsCid:    doc.ipfsCid,
     },
     stored,
-    onChain,
+    notarization: stored,
+    onChainRecord,
+    onChain: onChainRecord,
   }, 200)
 })
