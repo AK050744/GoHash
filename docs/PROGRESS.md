@@ -28,12 +28,23 @@
 - **(f) Shared Contract Architecture**: One shared DocumentNotary contract; no per-user contracts and no NFTs/tokens.
 - **(g) Off-Chain Privacy & Metadata Visibility**: The document file is never public and never on-chain; "visibility" (Sprint 5C) only controls which off-chain metadata a public verification result shows.
 
-### Wording & Terminology Standards (Code Comments, API Messages & Docs)
+### Wording & Terminology Standards (UI, Code Comments, API Messages & Docs)
 
-- **On-chain timestamp semantics**: An on-chain timestamp means **"the hash was recorded no later than this time"**, not authorship or creation time.
-- **Hashing vs. encryption**: Hashing is a one-way cryptographic digest; **hashing is not encryption**. Never describe document hashing as encryption or "encrypted".
-- **Forbidden terminology**: Never write `"immutable"`, `"cannot be altered"`, `"court-admissible"`, or `"impossible collision"`.
-- **Approved terminology**: Use `"tamper-evident"`, `"independently verifiable"`, and `"proof-of-existence"`.
+- **UI & Display Wording**:
+  - Always use: `"Recorded on-chain at <time>"`, `"tamper-evident"`, and `"independently verifiable"`.
+  - An on-chain timestamp means **"the hash was recorded no later than this time"**, not authorship or creation time.
+- **Hashing vs. Encryption**:
+  - Hashing is a one-way cryptographic digest; **hashing is not encryption**.
+  - Never describe document hashing as encryption, and never write `"encrypted hash"`.
+- **Prohibited Terminology & Claims**:
+  - Never write `"immutable"`, `"unhackable"`, `"cannot be altered"`, `"court-admissible"` / `"admissible"`, or `"impossible collision"`.
+  - Never make any **legal-validity claim** (e.g. "replaces legal notaries", "legally binding attestation").
+- **Mandatory Acceptance Searches (`frontend/src`)**:
+  - The codebase must be audited against these patterns, and every hit reported (target: **0 hits**):
+    1. `"immutable"`
+    2. `"unhackable"`
+    3. `"admissible"`
+    4. `"encrypt"`
 
 ---
 
@@ -229,6 +240,10 @@ npm run test:smoke
 cd ../frontend
 npm run lint
 npm run build
+
+# UI Wording & Forbidden Terms Audit (Must return 0 hits in frontend/src)
+# Checks: "immutable", "unhackable", "admissible", "encrypt"
+git grep -i -E "immutable|unhackable|admissible|encrypt" -- src
 ```
 
 ---

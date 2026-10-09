@@ -34,11 +34,12 @@ All API endpoints must conform to the standard response envelope. The frontend c
 
 ## 🔒 Terminology & Interpretation Standards
 
-All API responses, error messages, code comments, and documentation must strictly adhere to the following rules:
-1. **On-Chain Timestamps**: An on-chain timestamp strictly denotes that **"the hash was recorded no later than this time"**. It does **not** signify document authorship or document creation time.
-2. **Hashing vs. Encryption**: SHA-256 is a cryptographic hash digest, **not encryption**. Never describe hashing as encryption.
-3. **Forbidden Terminology**: Never write `"immutable"`, `"cannot be altered"`, `"court-admissible"`, or `"impossible collision"`.
-4. **Document Privacy & Visibility**: The document file is **never public and never on-chain**. The `visibility` setting (`PUBLIC` vs `PRIVATE`, Sprint 5C) only controls which off-chain metadata a public verification result displays (e.g. original filename vs raw cryptographic attestation only).
+All UI copy, API responses, error messages, code comments, and documentation must strictly adhere to the following rules:
+1. **On-Chain Timestamps**: An on-chain timestamp strictly denotes that **"the hash was recorded no later than this time"**. In user interfaces, display this as **"Recorded on-chain at <time>"**. It does **not** signify document authorship or document creation time.
+2. **Hashing vs. Encryption**: SHA-256 is a cryptographic hash digest, **not encryption**. Never describe hashing as encryption and never use the term `"encrypted hash"`.
+3. **Approved Terminology**: Use `"Recorded on-chain at <time>"`, `"tamper-evident"`, `"independently verifiable"`, and `"proof-of-existence"`.
+4. **Forbidden Terminology & Claims**: Never write `"immutable"`, `"unhackable"`, `"cannot be altered"`, `"court-admissible"`, `"admissible"`, or `"impossible collision"`. Never make any legal-validity claims.
+5. **Document Privacy & Visibility**: The document file is **never public and never on-chain**. The `visibility` setting (`PUBLIC` vs `PRIVATE`, Sprint 5C) only controls which off-chain metadata a public verification result displays (e.g. original filename vs raw cryptographic attestation only).
 
 ---
 

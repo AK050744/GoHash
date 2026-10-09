@@ -454,13 +454,13 @@ export default function DocumentDetailPage() {
 
           {/* Timestamp */}
           <div className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-            <span className="text-surface-400">Timestamp</span>
+            <span className="text-surface-400">Recorded on-chain at</span>
             {not?.timestamp ? (
               <span className="text-white font-medium text-xs">
-                {formatDate(new Date(not.timestamp * 1000).toISOString())}
+                Recorded on-chain at {formatDate(new Date(not.timestamp * 1000).toISOString())}
               </span>
             ) : (
-              <span className="text-surface-500 font-mono text-xs">Not notarized yet</span>
+              <span className="text-surface-500 font-mono text-xs">Not recorded on-chain yet</span>
             )}
           </div>
 
