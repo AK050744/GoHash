@@ -3,8 +3,8 @@ import { ApiError } from '../utils/ApiError'
 import { asyncHandler } from '../utils/asyncHandler'
 
 /**
- * POST /api/verify (Planned Day 11)
+ * POST /api/verify (Planned Sprint 5A)
  */
 export const verifyDocument = asyncHandler(async (_req: Request, _res: Response) => {
-  throw ApiError.notImplemented('Document verification endpoint planned for Day 11')
+  throw ApiError.notImplemented('Document verification endpoint planned for Sprint 5A')
 })

@@ -200,6 +200,18 @@ async function runChainTests() {
   const signer2Address = await signer2.getAddress()
   const signer3Address = await signer3.getAddress()
 
+  // Ensure signer3 is NOT authorized on-chain at the start of the test run (clean slate for repeated runs)
+  try {
+    const isSigner3Auth = await BlockchainService.isNotaryAuthorized(signer3Address)
+    if (isSigner3Auth) {
+      const contractAsOwner = BlockchainService.getContract(signer0)
+      const removeTx = await contractAsOwner.removeNotary(signer3Address)
+      await removeTx.wait()
+    }
+  } catch {
+    // If contract not deployed yet, continue
+  }
+
   const testPassword = 'Password123!'
 
   // Helper: register a user and return {token, id}
@@ -244,7 +256,7 @@ async function runChainTests() {
     })
   }
 
-  const testEmail = `chain_test_${Date.now()}@example.com`
+  const testEmail = `chain_test_${Date.now()}_${crypto.randomBytes(4).toString('hex')}@example.com`
   let authToken = ''
   let testUserId = ''
 
@@ -426,7 +438,7 @@ async function runChainTests() {
 
     // ── Test 8: wallet address already linked to another user -> 409 WALLET_IN_USE
     try {
-      const user2Email = `chain_user2_${Date.now()}@example.com`
+      const user2Email = `chain_user2_${Date.now()}_${crypto.randomBytes(4).toString('hex')}@example.com`
       const { token: token2, id: id2 } = await registerUser(user2Email, 'Chain User 2')
 
       const nonceRes = await request('/api/auth/wallet/nonce', {
@@ -459,22 +471,38 @@ async function runChainTests() {
       }
     } catch (err) {
       logFail('wallet link address in use -> WALLET_IN_USE', err)
+    } finally {
+      // Clear testUser's wallet so signer2 is free for User A in subsequent tests
+      await User.updateOne({ _id: testUserId }, { $set: { walletAddress: null } })
     }
 
     console.log('\n--- Notarization Workflow Tests ---')
 
     // Set up actors for notarization workflow:
     // User A: Document owner (regular USER)
-    const userAEmail = `user_a_${Date.now()}@example.com`
+    const userAEmail = `user_a_${Date.now()}_${crypto.randomBytes(4).toString('hex')}@example.com`
     const { token: userAToken, id: userAId } = await registerUser(userAEmail, 'User A')
 
     // Notary User: Certified notary (NOTARY role)
-    const notaryEmail = `notary_${Date.now()}@example.com`
-    const { token: notaryToken, id: notaryId } = await registerUser(notaryEmail, 'Notary Official')
+    // 1. Register the user
+    const notaryEmail = `notary_${Date.now()}_${crypto.randomBytes(4).toString('hex')}@example.com`
+    const { id: notaryId } = await registerUser(notaryEmail, 'Notary Official')
+
+    // 2. Update role in database BEFORE logging in
     await User.updateOne({ _id: notaryId }, { role: 'NOTARY' })
 
+    // 3. Log in to obtain a fresh JWT carrying the NOTARY role
+    const notaryLoginRes = await request('/api/auth/login', {
+      method: 'POST',
+      body: { email: notaryEmail, password: testPassword },
+    })
+    if (notaryLoginRes.status !== 200 || !notaryLoginRes.data?.token) {
+      throw new Error(`Failed to log in as NOTARY: ${JSON.stringify(notaryLoginRes.data)}`)
+    }
+    const notaryToken = notaryLoginRes.data.token
+
     // User B: Independent third-party (regular USER)
-    const userBEmail = `user_b_${Date.now()}@example.com`
+    const userBEmail = `user_b_${Date.now()}_${crypto.randomBytes(4).toString('hex')}@example.com`
     const { token: userBToken, id: userBId } = await registerUser(userBEmail, 'User B')
 
     // ── Test 9: pending list as NOTARY ok, USER gets 403 ─────────────────────
@@ -607,8 +635,7 @@ async function runChainTests() {
     // ── Test 11: real flow (notarize on-chain -> confirm -> CONFIRMED) ────────
     let realTxHash = ''
     try {
-      const contractInfo = BlockchainService.getContractInfo()
-      const contractAsNotary = new ethers.Contract(contractInfo.address, contractInfo.abi, signer1)
+      const contractAsNotary = BlockchainService.getContract(signer1)
 
       // Signer 1 (the authorized notary) calls notarize on the smart contract
       const tx = await contractAsNotary.notarize(
@@ -644,6 +671,7 @@ async function runChainTests() {
       }
 
       // Verify GET /api/documents/:id shows notarization details including on-chain timestamp & rejectionReason
+      const contractInfo = BlockchainService.getContractInfo()
       const docDetailRes = await request(`/api/documents/${doc1._id.toString()}`, {
         headers: { Authorization: `Bearer ${userAToken}` },
       })
@@ -759,8 +787,7 @@ async function runChainTests() {
 
     // ── Test 15: transaction from a second authorized notary that is not the linked wallet is rejected ──
     try {
-      const contractInfo = BlockchainService.getContractInfo()
-      const contractAsOwner = new ethers.Contract(contractInfo.address, contractInfo.abi, signer0)
+      const contractAsOwner = BlockchainService.getContract(signer0)
 
       // Signer 0 (contract owner) authorizes signer 3 as a second notary on-chain
       const addNotaryTx = await contractAsOwner.addNotary(signer3Address)
@@ -783,7 +810,7 @@ async function runChainTests() {
       })
 
       // Signer 3 (second authorized notary) calls notarize on-chain
-      const contractAsSigner3 = new ethers.Contract(contractInfo.address, contractInfo.abi, signer3)
+      const contractAsSigner3 = BlockchainService.getContract(signer3)
       const txNotary3 = await contractAsSigner3.notarize(
         `0x${doc3Hash}`,
         '',
@@ -797,6 +824,10 @@ async function runChainTests() {
         headers: { Authorization: `Bearer ${notaryToken}` },
         body: { transactionHash: txNotary3.hash },
       })
+
+      // Immediately revoke signer 3 so the node state remains clean
+      const removeTx = await contractAsOwner.removeNotary(signer3Address)
+      await removeTx.wait()
 
       if (
         confirmRes.status === 422 &&
@@ -816,8 +847,7 @@ async function runChainTests() {
 
     // ── Test 16: notarize call for a different hash is rejected ──────────────
     try {
-      const contractInfo = BlockchainService.getContractInfo()
-      const contractAsNotary = new ethers.Contract(contractInfo.address, contractInfo.abi, signer1)
+      const contractAsNotary = BlockchainService.getContract(signer1)
 
       // Set up doc4
       const doc4Hash = crypto.randomBytes(32).toString('hex')
@@ -1026,6 +1056,18 @@ async function runChainTests() {
     }
 
   } finally {
+    // Teardown signer3 authorization if it remains
+    try {
+      const isSigner3Auth = await BlockchainService.isNotaryAuthorized(signer3Address)
+      if (isSigner3Auth) {
+        const contractAsOwner = BlockchainService.getContract(signer0)
+        const removeTx = await contractAsOwner.removeNotary(signer3Address)
+        await removeTx.wait()
+      }
+    } catch {
+      // Best-effort cleanup
+    }
+
     // Teardown server
     if (server) {
       await new Promise<void>((resolve) => server?.close(() => resolve()))

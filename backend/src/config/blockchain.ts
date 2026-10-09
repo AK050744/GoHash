@@ -28,6 +28,15 @@ export const NOTARY_ABI = [
   'event NotaryRemoved(address indexed notary, address indexed removedBy)',
 ]
 
+// Full ABI matching CONTRACT_INTERFACE.md for client/testing contract runners
+export const FULL_NOTARY_ABI = [
+  ...NOTARY_ABI,
+  'function contractOwner() external view returns (address)',
+  'function notarize(bytes32 documentHash, string calldata ipfsCid, address owner) external',
+  'function addNotary(address notary) external',
+  'function removeNotary(address notary) external',
+]
+
 // ─── Deployment file loader ──────────────────────────────────────────────────
 
 export interface DeploymentInfo {

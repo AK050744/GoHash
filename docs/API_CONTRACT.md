@@ -627,7 +627,6 @@ All UI copy, API responses, error messages, code comments, and documentation mus
     "contractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
     "chainId": 31337,
     "timestamp": 1728472500,
-    "onChainTimestamp": 1728472500,
     "rejectionReason": null,
     "failureReason": null
   },

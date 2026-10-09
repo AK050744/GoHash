@@ -11,7 +11,7 @@
  */
 
 import { ethers } from 'ethers'
-import { getProvider, getNotaryContract, loadDeploymentInfo, NOTARY_ABI } from '../config/blockchain'
+import { getProvider, getNotaryContract, loadDeploymentInfo, NOTARY_ABI, FULL_NOTARY_ABI } from '../config/blockchain'
 import { ApiError } from '../utils/ApiError'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -43,6 +43,16 @@ export interface ReceiptVerification {
 // ─── BlockchainService ───────────────────────────────────────────────────────
 
 export class BlockchainService {
+  /**
+   * Helper to instantiate a Contract with an optional runner (defaults to read-only provider).
+   * SECURITY: The backend NEVER holds a private key or signer.
+   */
+  static getContract(runner?: ethers.ContractRunner): ethers.Contract {
+    const deployment = loadDeploymentInfo()
+    const r = runner ?? getProvider()
+    return new ethers.Contract(deployment.address, FULL_NOTARY_ABI, r)
+  }
+
   /**
    * Returns deployment info: address, chainId, and ABI.
    * Used by approve endpoint to build the response the frontend uses.

@@ -3,7 +3,7 @@ import { verifyDocument } from '../controllers/verify.controller'
 
 const router = Router()
 
-// Day 11 endpoint (Stub returning 501)
+// Sprint 5A endpoint (Stub returning 501)
 router.post('/', verifyDocument)
 
 export default router

@@ -139,6 +139,9 @@ Local database services run through Docker container `gohash-mongo` using the of
 - Implemented cryptographic wallet link verification flow (`POST /api/auth/wallet/nonce` and `PATCH /api/auth/wallet`) utilizing `ethers.verifyMessage`.
 - Implemented on-chain receipt verification (`BlockchainService.verifyReceipt`) auditing transaction status, contract address, document hash bytes32, and notary signer authorization.
 - Added notarization workflow routes: `GET /api/notarization/pending`, `GET /api/notarization/:id`, `POST /api/notarization/:id/reject`, `POST /api/notarization/:id/approve`, and `POST /api/notarization/:id/confirm`.
+- Added contract retrieval helper `BlockchainService.getContract()` defaulting to read-only provider (no backend signer) while permitting external runner attachment in integration tests.
+- Standardized `GET /api/blockchain/:documentId` response payload to `{ document, stored, onChainRecord }`, eliminating duplicate fields.
+- Verified `npm run test:chain` suite passes cleanly across repeat consecutive executions against the local node.
 
 ### Sprint 4B (Frontend MetaMask Integration & Notary On-Chain Attestation Flow)
 - **Wallet Context (`context/WalletContext.tsx`)**:

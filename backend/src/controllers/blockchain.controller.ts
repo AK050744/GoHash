@@ -72,7 +72,6 @@ export const getBlockchainDocument = asyncHandler(async (req: Request, res: Resp
         chainId:          storedNotarization.chainId ?? null,
         // on-chain timestamp: proves hash was recorded no later than this time
         timestamp:        storedNotarization.onChainTimestamp ?? null,
-        onChainTimestamp: storedNotarization.onChainTimestamp ?? null,
         rejectionReason:  storedNotarization.rejectionReason ?? null,
         failureReason:    storedNotarization.failureReason ?? null,
       }
@@ -86,8 +85,6 @@ export const getBlockchainDocument = asyncHandler(async (req: Request, res: Resp
       ipfsCid:    doc.ipfsCid,
     },
     stored,
-    notarization: stored,
     onChainRecord,
-    onChain: onChainRecord,
   }, 200)
 })
