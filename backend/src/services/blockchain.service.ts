@@ -12,6 +12,7 @@
 
 import { ethers } from 'ethers'
 import { getProvider, getNotaryContract, loadDeploymentInfo, NOTARY_ABI } from '../config/blockchain'
+import { ApiError } from '../utils/ApiError'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -45,13 +46,26 @@ export class BlockchainService {
   /**
    * Returns deployment info: address, chainId, and ABI.
    * Used by approve endpoint to build the response the frontend uses.
+   * Throws 503 CONTRACT_NOT_DEPLOYED if the deployment file is missing.
    */
   static getContractInfo(): ContractInfo {
-    const deployment = loadDeploymentInfo()
-    return {
-      address: deployment.address,
-      chainId: deployment.chainId,
-      abi: NOTARY_ABI,
+    try {
+      const deployment = loadDeploymentInfo()
+      return {
+        address: deployment.address,
+        chainId: deployment.chainId,
+        abi: NOTARY_ABI,
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('not deployed') || msg.includes('DEPLOYMENT_FILE') || msg.includes('Malformed')) {
+        throw new ApiError(
+          503,
+          'CONTRACT_NOT_DEPLOYED',
+          'Contract not deployed. Run: cd blockchain; npx hardhat run scripts/deploy-local.ts --network localhost'
+        )
+      }
+      throw err
     }
   }
 
@@ -59,33 +73,45 @@ export class BlockchainService {
    * Query on-chain record for a document hash.
    * Returns { exists: false } if the document is not notarized.
    * Never reverts on "not found".
+   * Throws 503 CONTRACT_NOT_DEPLOYED or 503 CHAIN_UNREACHABLE on infrastructure errors.
    */
   static async getRecord(sha256Hash: string): Promise<OnChainRecord> {
-    const contract = getNotaryContract()
-    const bytes32  = sha256Hash.startsWith('0x') ? sha256Hash : `0x${sha256Hash}`
+    try {
+      const contract = getNotaryContract()
+      const bytes32  = sha256Hash.startsWith('0x') ? sha256Hash : `0x${sha256Hash}`
 
-    const onChain = await contract.exists(bytes32)
-    if (!onChain) return { exists: false }
+      const onChain = await contract.exists(bytes32)
+      if (!onChain) return { exists: false }
 
-    const [documentHash_, ipfsCid_, owner_, notary_, timestamp_] =
-      await contract.getDocument(bytes32)
+      const [documentHash_, ipfsCid_, owner_, notary_, timestamp_] =
+        await contract.getDocument(bytes32)
 
-    return {
-      exists:       true,
-      documentHash: documentHash_,
-      ipfsCid:      ipfsCid_,
-      owner:        owner_.toLowerCase(),
-      notary:       notary_.toLowerCase(),
-      timestamp:    Number(timestamp_),
+      return {
+        exists:       true,
+        documentHash: documentHash_,
+        ipfsCid:      ipfsCid_,
+        owner:        owner_.toLowerCase(),
+        notary:       notary_.toLowerCase(),
+        timestamp:    Number(timestamp_),
+      }
+    } catch (err: unknown) {
+      BlockchainService._rethrowInfraError(err)
+      throw err
     }
   }
 
   /**
    * Check whether a wallet address is an authorized notary on-chain.
+   * Throws 503 CONTRACT_NOT_DEPLOYED or 503 CHAIN_UNREACHABLE on infrastructure errors.
    */
   static async isNotaryAuthorized(walletAddress: string): Promise<boolean> {
-    const contract = getNotaryContract()
-    return contract.isNotary(walletAddress)
+    try {
+      const contract = getNotaryContract()
+      return contract.isNotary(walletAddress)
+    } catch (err: unknown) {
+      BlockchainService._rethrowInfraError(err)
+      throw err
+    }
   }
 
   /**
@@ -210,4 +236,45 @@ export class BlockchainService {
       timestamp:    foundEvent.timestamp,
     }
   }
+
+  /**
+   * Inspect an unknown error from a blockchain call and re-throw it as an ApiError
+   * with an appropriate 503 code, or return (allowing the caller to re-throw the
+   * original error if no infrastructure match is found).
+   *
+   *  • "not deployed" / "DEPLOYMENT_FILE" / "Malformed"  → 503 CONTRACT_NOT_DEPLOYED
+   *  • ECONNREFUSED / ENOTFOUND / ERR_SOCKET / timeout   → 503 CHAIN_UNREACHABLE
+   */
+  private static _rethrowInfraError(err: unknown): never | void {
+    const msg = err instanceof Error ? err.message : String(err)
+
+    if (
+      msg.includes('not deployed') ||
+      msg.includes('DEPLOYMENT_FILE') ||
+      msg.includes('Malformed deployment')
+    ) {
+      throw new ApiError(
+        503,
+        'CONTRACT_NOT_DEPLOYED',
+        'Contract not deployed. Run: cd blockchain; npx hardhat run scripts/deploy-local.ts --network localhost'
+      )
+    }
+
+    if (
+      msg.includes('ECONNREFUSED') ||
+      msg.includes('ENOTFOUND') ||
+      msg.includes('ERR_SOCKET') ||
+      msg.includes('network timeout') ||
+      msg.includes('could not detect network') ||
+      msg.includes('connection refused')
+    ) {
+      throw new ApiError(
+        503,
+        'CHAIN_UNREACHABLE',
+        `Blockchain node unreachable at ${process.env.RPC_URL ?? 'configured RPC_URL'}. Start the Hardhat node: cd blockchain; npx hardhat node`
+      )
+    }
+    // Not an infra error — let caller re-throw the original
+  }
 }
+

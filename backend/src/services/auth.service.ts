@@ -165,10 +165,11 @@ export class AuthService {
    *   1. Load user with walletNonce + walletNonceExpiry (select:false fields).
    *   2. Verify nonce is present and not expired.
    *   3. Reconstruct the canonical message from stored nonce.
-   *   4. Recover signer via ethers.verifyMessage (never creates a Wallet).
-   *   5. Check recovered address == walletAddress.
-   *   6. Ensure no other user already owns that wallet.
-   *   7. Persist lowercase walletAddress; clear nonce.
+   *   4. Clear the nonce immediately (one-time; any second attempt → NONCE_INVALID).
+   *   5. Recover signer via ethers.verifyMessage (never creates or holds any key).
+   *   6. Check recovered address == walletAddress (SIGNATURE_INVALID on mismatch).
+   *   7. Ensure no other user already owns that wallet (WALLET_IN_USE).
+   *   8. Persist lowercase walletAddress.
    */
   static async linkWallet(
     userId: string,
@@ -198,18 +199,26 @@ export class AuthService {
       `Expires: ${user.walletNonceExpiry.toISOString()}`,
     ].join('\n')
 
-    // Recover the signer — ethers.verifyMessage does NOT create or hold any key
+    // Clear nonce immediately after any attempt that reaches verification.
+    // This means a replayed second call will get NONCE_INVALID even if the
+    // first call had a bad signature.
+    await User.updateOne(
+      { _id: userId },
+      { walletNonce: null, walletNonceExpiry: null }
+    )
+
+    // Recover the signer — ethers.verifyMessage does NOT create or hold any key.
     let recovered: string
     try {
       recovered = ethers.verifyMessage(message, signature)
     } catch {
-      throw ApiError.badRequest('Invalid signature', 'NONCE_INVALID')
+      throw ApiError.badRequest('Invalid signature format', 'SIGNATURE_INVALID')
     }
 
     if (recovered.toLowerCase() !== walletAddress.toLowerCase()) {
       throw ApiError.badRequest(
         'Signature does not match the provided wallet address',
-        'NONCE_INVALID'
+        'SIGNATURE_INVALID'
       )
     }
 
@@ -222,14 +231,10 @@ export class AuthService {
       throw ApiError.conflict('This wallet address is already linked to another account', 'WALLET_IN_USE')
     }
 
-    // Persist — clear nonce after use (one-time)
+    // Persist lowercase walletAddress (nonce already cleared above)
     const updated = await User.findByIdAndUpdate(
       userId,
-      {
-        walletAddress: walletAddress.toLowerCase(),
-        walletNonce: null,
-        walletNonceExpiry: null,
-      },
+      { walletAddress: walletAddress.toLowerCase() },
       { new: true, runValidators: true }
     )
 

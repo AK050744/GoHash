@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test:smoke": "tsx scripts/smoke-test.ts",
+    "test:chain": "tsx scripts/chain-test.ts",
     "seed": "tsx scripts/seed.ts",
     "lint": "eslint . --ext .ts"
   },

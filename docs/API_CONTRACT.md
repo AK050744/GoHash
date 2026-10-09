@@ -51,7 +51,8 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 | `POST` | `/api/auth/register` | Public | Register a new user account (role USER) | **IMPLEMENTED** |
 | `POST` | `/api/auth/login` | Public | Authenticate user & return signed JWT | **IMPLEMENTED** |
 | `GET` | `/api/auth/me` | JWT | Fetch authenticated user profile | **IMPLEMENTED** |
-| `PATCH` | `/api/auth/wallet` | JWT | Associate public Ethereum wallet with user | **IMPLEMENTED** |
+| `POST` | `/api/auth/wallet/nonce` | JWT | Generate one-time signed-message nonce for wallet link | **IMPLEMENTED** |
+| `PATCH` | `/api/auth/wallet` | JWT | Link wallet via signed nonce (backend never holds keys) | **IMPLEMENTED** |
 | `POST` | `/api/documents/upload` | JWT (USER) | Upload PDF file & compute SHA-256 hash | **IMPLEMENTED** |
 | `GET` | `/api/documents/stats` | JWT (USER) | Aggregate document counts (total, pending, notarized) | **IMPLEMENTED** |
 | `GET` | `/api/documents` | JWT (USER) | List user documents (newest first, optional ?status=) | **IMPLEMENTED** |
@@ -172,14 +173,36 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 - **Error Responses**:
   - `401 Unauthorized` (`UNAUTHORIZED`): Missing or invalid token.
 
-#### `PATCH /api/auth/wallet`
+#### `POST /api/auth/wallet/nonce`
 - **Auth**: Bearer JWT
-- **Request Body**:
+- **Request**: None (uses JWT identity)
+- **Status**: `IMPLEMENTED`
+- **Purpose**: Generate a one-time nonce message the client must sign with their wallet.
+  The nonce is stored server-side (`select: false`) and is valid for **5 minutes**.
+  Calling this endpoint again invalidates any previous nonce.
+- **Success (200)**:
 ```json
 {
-  "walletAddress": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
+  "success": true,
+  "message": "GoHash wallet link\nUser: <userId>\nNonce: <32-hex-char random>\nExpires: <ISO-8601>",
+  "expiresAt": "2026-10-09T12:35:00.000Z"
 }
 ```
+- **Error Responses**:
+  - `401 Unauthorized` (`UNAUTHORIZED`): Missing or invalid token.
+
+#### `PATCH /api/auth/wallet`
+- **Auth**: Bearer JWT
+- **Request Body** (signed-nonce flow — required after Sprint 4A):
+```json
+{
+  "walletAddress": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+  "signature": "0x..."
+}
+```
+> **How the signature is produced**: The client calls `POST /api/auth/wallet/nonce` first,
+> then signs the returned `message` string with their wallet (e.g. MetaMask `personal_sign` /
+> ethers.js `signer.signMessage(message)`). Signing is gas-free and the backend never sees a private key.
 - **Success (200)**:
 ```json
 {
@@ -196,6 +219,9 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 ```
 - **Error Responses**:
   - `400 Bad Request` (`VALIDATION_ERROR`): Wallet address must be `0x` followed by 40 hex digits.
+  - `400 Bad Request` (`NONCE_INVALID`): No active nonce, or the nonce has expired / already been consumed.
+  - `400 Bad Request` (`SIGNATURE_INVALID`): The recovered signer does not match `walletAddress`.
+  - `409 Conflict` (`WALLET_IN_USE`): This wallet address is already linked to another account.
 
 ---
 

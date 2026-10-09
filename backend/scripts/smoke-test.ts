@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import mongoose from 'mongoose'
+import { ethers } from 'ethers'
 import app from '../src/app'
 import { env } from '../src/config/env'
 import { User } from '../src/models/User'
@@ -335,23 +336,148 @@ async function runSmokeTests() {
       logFail('GET /api/auth/me (With Token)', err)
     }
 
-    // 11. /auth/wallet
-    const testWallet = '0x1234567890123456789012345678901234567890'
+    // 11. PATCH /api/auth/wallet — signed nonce flow
+    // A throwaway wallet is created in-memory (createRandom) and used ONLY to sign.
+    // It is never stored, never printed to the console.
+    const throwawayWallet = ethers.Wallet.createRandom()
+    const throwawayAddress = throwawayWallet.address
+
     try {
+      // 11a. Positive: correct wallet link
+      // Step 1: obtain nonce message
+      const nonceRes = await request('/api/auth/wallet/nonce', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}` },
+      })
+      if (!nonceRes.data?.message || !nonceRes.data?.expiresAt) {
+        throw new Error(`Nonce response missing fields: ${JSON.stringify(nonceRes.data)}`)
+      }
+      // Step 2: sign with throwaway wallet
+      const sig = await throwawayWallet.signMessage(nonceRes.data.message)
+      // Step 3: PATCH wallet
       const res = await request('/api/auth/wallet', {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${authToken}` },
-        body: { walletAddress: testWallet },
+        body: { walletAddress: throwawayAddress, signature: sig },
       })
-
-      if (res.status === 200 && res.data?.success === true && res.data?.user?.walletAddress === testWallet.toLowerCase()) {
-        logPass('PATCH /api/auth/wallet', `Wallet stored: ${res.data.user.walletAddress}`)
+      if (
+        res.status === 200 &&
+        res.data?.success === true &&
+        res.data?.user?.walletAddress === throwawayAddress.toLowerCase()
+      ) {
+        logPass('PATCH /api/auth/wallet (Signed Nonce)', `Wallet stored: ${res.data.user.walletAddress}`)
       } else {
         throw new Error(`Expected 200 with wallet, got ${res.status}: ${JSON.stringify(res.data)}`)
       }
     } catch (err) {
-      logFail('PATCH /api/auth/wallet', err)
+      logFail('PATCH /api/auth/wallet (Signed Nonce)', err)
     }
+
+    // 11b. Wrong signer: sign message with a different throwaway wallet → 400 SIGNATURE_INVALID
+    try {
+      const wrongWallet  = ethers.Wallet.createRandom()
+      const nonceRes2 = await request('/api/auth/wallet/nonce', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}` },
+      })
+      const badSig = await wrongWallet.signMessage(nonceRes2.data.message)
+      const res = await request('/api/auth/wallet', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${authToken}` },
+        body: { walletAddress: throwawayAddress, signature: badSig },
+      })
+      if (res.status === 400 && res.data?.error?.code === 'SIGNATURE_INVALID') {
+        logPass('PATCH /api/auth/wallet (Wrong Signer)', `status=400, code=${res.data.error.code}`)
+      } else {
+        throw new Error(`Expected 400 SIGNATURE_INVALID, got ${res.status}: ${JSON.stringify(res.data)}`)
+      }
+    } catch (err) {
+      logFail('PATCH /api/auth/wallet (Wrong Signer)', err)
+    }
+
+    // 11c. Replay: second call with same nonce (already consumed) → 400 NONCE_INVALID
+    try {
+      const replayWallet = ethers.Wallet.createRandom()
+      const nonceRes3 = await request('/api/auth/wallet/nonce', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}` },
+      })
+      const replaySig = await replayWallet.signMessage(nonceRes3.data.message)
+      // First attempt (valid signer, but wrong address — nonce gets consumed)
+      await request('/api/auth/wallet', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${authToken}` },
+        body: { walletAddress: replayWallet.address, signature: replaySig },
+      })
+      // Second attempt with same nonce → must fail as nonce is cleared
+      const res = await request('/api/auth/wallet', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${authToken}` },
+        body: { walletAddress: replayWallet.address, signature: replaySig },
+      })
+      if (res.status === 400 && res.data?.error?.code === 'NONCE_INVALID') {
+        logPass('PATCH /api/auth/wallet (Replay Nonce)', `status=400, code=${res.data.error.code}`)
+      } else {
+        throw new Error(`Expected 400 NONCE_INVALID on replay, got ${res.status}: ${JSON.stringify(res.data)}`)
+      }
+    } catch (err) {
+      logFail('PATCH /api/auth/wallet (Replay Nonce)', err)
+    }
+
+    // 11d. Wallet in use: another user tries to link an address already linked to User A → 409 WALLET_IN_USE
+    try {
+      // First: User A links a fresh wallet so we have a known-in-use address.
+      const freshWallet  = ethers.Wallet.createRandom()
+      const freshAddress = freshWallet.address
+      const freshNonce = await request('/api/auth/wallet/nonce', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${authToken}` },
+      })
+      const freshSig = await freshWallet.signMessage(freshNonce.data.message)
+      await request('/api/auth/wallet', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${authToken}` },
+        body: { walletAddress: freshAddress, signature: freshSig },
+      })
+
+      // Now register User C and have them try to link the same freshAddress.
+      const userCEmail = `user_c_${Date.now()}@example.com`
+      const userCReg = await request('/api/auth/register', {
+        method: 'POST',
+        body: {
+          name: 'User C',
+          email: userCEmail,
+          password: testPassword,
+          confirmPassword: testPassword,
+        },
+      })
+      const userCToken = userCReg.data?.token
+      const userCId    = userCReg.data?.user?.id
+
+      // User C tries to link freshAddress (already linked to User A)
+      const userCNonce = await request('/api/auth/wallet/nonce', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${userCToken}` },
+      })
+      const userCSig = await freshWallet.signMessage(userCNonce.data.message)
+      const res = await request('/api/auth/wallet', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${userCToken}` },
+        body: { walletAddress: freshAddress, signature: userCSig },
+      })
+
+      // Clean up User C regardless
+      if (userCId) await User.deleteOne({ _id: userCId })
+
+      if (res.status === 409 && res.data?.error?.code === 'WALLET_IN_USE') {
+        logPass('PATCH /api/auth/wallet (Wallet In Use)', `status=409, code=${res.data.error.code}`)
+      } else {
+        throw new Error(`Expected 409 WALLET_IN_USE, got ${res.status}: ${JSON.stringify(res.data)}`)
+      }
+    } catch (err) {
+      logFail('PATCH /api/auth/wallet (Wallet In Use)', err)
+    }
+
 
     // 12. RBAC check: Regular USER blocked from requireRole('ADMIN')
     try {
