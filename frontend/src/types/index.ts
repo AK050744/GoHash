@@ -153,6 +153,7 @@ export interface ApproveNotarizationResponse {
 
 export interface ConfirmNotarizationResponse {
   success: boolean
+  status?: string
   code?: string
   message?: string
   notarization?: PendingNotarizationItem

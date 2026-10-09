@@ -22,6 +22,7 @@ export interface WalletContextType {
   error: string | null
   isMetaMaskInstalled: boolean
   provider: ethers.BrowserProvider | null
+  getSigner: () => Promise<ethers.JsonRpcSigner>
   connect: () => Promise<void>
   disconnect: () => Promise<void>
   switchNetwork: () => Promise<void>
@@ -253,6 +254,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const getSigner = useCallback(async (): Promise<ethers.JsonRpcSigner> => {
+    if (!window.ethereum) {
+      throw new Error('MetaMask is not installed. Please install it from metamask.io.')
+    }
+    const currentProvider = provider || new ethers.BrowserProvider(window.ethereum)
+    return await currentProvider.getSigner()
+  }, [provider])
+
   return (
     <WalletContext.Provider
       value={{
@@ -264,6 +273,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         error,
         isMetaMaskInstalled,
         provider,
+        getSigner,
         connect,
         disconnect,
         switchNetwork,

@@ -109,8 +109,11 @@ export default function ProfilePage() {
       if (err instanceof ApiError) {
         if (err.code === 'WALLET_IN_USE' || err.status === 409) {
           setLinkError('This wallet address is already linked to another GoHash account.')
-        } else if (err.code === 'NONCE_INVALID' || err.status === 400) {
+        } else if (err.code === 'NONCE_INVALID' || (err.status === 400 && err.message?.toLowerCase().includes('nonce'))) {
           setLinkError('The verification nonce is invalid or has expired.')
+          setShowRetry(true)
+        } else if (err.code === 'SIGNATURE_INVALID' || (err.status === 400 && err.message?.toLowerCase().includes('signature'))) {
+          setLinkError('Signature verification failed. The recovered address does not match your wallet.')
           setShowRetry(true)
         } else {
           setLinkError(err.message || 'Failed to link wallet.')
@@ -217,7 +220,7 @@ export default function ProfilePage() {
             {linkedAddress ? (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
                 <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
-                <span>Wallet Linked</span>
+                <span>Linked ({linkedAddress.slice(0, 6)}...{linkedAddress.slice(-4)})</span>
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/20">

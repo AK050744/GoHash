@@ -50,6 +50,7 @@ export default function NotaryRequestDetailPage() {
     isCorrectNetwork,
     connect,
     switchNetwork,
+    getSigner,
   } = useWallet()
 
   // Base data state
@@ -171,7 +172,68 @@ export default function NotaryRequestDetailPage() {
     }
   }
 
-  // Open PDF via JWT blob streaming
+  // Helper to map every server and blockchain error code readably
+  const mapNotarizationError = (err: unknown): string => {
+    if (err instanceof ApiError) {
+      if (err.code === 'WALLET_NOT_LINKED') {
+        return 'You must link a wallet address on your Profile before approving notarizations.'
+      }
+      if (err.code === 'NOTARY_NOT_AUTHORIZED_ON_CHAIN') {
+        return 'Your wallet is not authorized as a notary on the smart contract.'
+      }
+      if (err.code === 'OWNER_WALLET_REQUIRED') {
+        return 'The document owner must link an Ethereum wallet before the document can be notarized.'
+      }
+      if (err.code === 'ALREADY_NOTARIZED') {
+        return 'This document hash has already been notarized on the blockchain.'
+      }
+      if (err.code === 'REASON_REQUIRED') {
+        return 'Rejection reason is required.'
+      }
+      if (err.code === 'INVALID_STATE') {
+        return err.message || 'The notarization request is in an invalid state for this operation.'
+      }
+      if (
+        err.code === 'CONTRACT_NOT_DEPLOYED' ||
+        err.code === 'CHAIN_UNREACHABLE' ||
+        err.status === 503
+      ) {
+        return 'Blockchain node not reachable. Start the local node and redeploy the contract.'
+      }
+      if (err.code === 'VERIFICATION_FAILED' || err.status === 422) {
+        const msg = err.message || ''
+        if (msg.includes('TX_NOT_FOUND')) {
+          return 'Verification failed: Transaction not found on chain.'
+        }
+        if (msg.includes('WRONG_CONTRACT')) {
+          return 'Verification failed: Transaction destination does not match the configured contract address.'
+        }
+        if (msg.includes('WRONG_SIGNER')) {
+          return "Verification failed: Transaction was not signed by the notary's linked wallet."
+        }
+        if (msg.includes('WRONG_HASH')) {
+          return 'Verification failed: Document hash in transaction receipt does not match this document.'
+        }
+        if (msg.toLowerCase().includes('already used') || msg.toLowerCase().includes('duplicate')) {
+          return 'Verification failed: Transaction hash is already used by another confirmed notarization.'
+        }
+        if (msg.includes('WRONG_CHAIN')) {
+          return 'Verification failed: Transaction was submitted on the wrong network chain.'
+        }
+        if (msg.includes('EVENT_NOT_FOUND')) {
+          return 'Verification failed: DocumentNotarized event missing from transaction receipt.'
+        }
+        return `Verification failed: ${msg}`
+      }
+      return err.message || 'An error occurred during notarization.'
+    }
+    if (err instanceof Error) {
+      return err.message
+    }
+    return 'An unexpected error occurred.'
+  }
+
+  // Open PDF via JWT blob streaming (open new tab synchronously first to avoid popup blockers)
   const handleOpenPdf = async () => {
     const docId = extractDocId(notarization?.documentId)
     if (!docId || openingPdf) return
@@ -179,14 +241,24 @@ export default function NotaryRequestDetailPage() {
     setOpeningPdf(true)
     setPdfError(null)
 
+    // Open new tab synchronously in user event handler to avoid popup blockers
+    const newTab = window.open('about:blank', '_blank')
+
     try {
       const blob = await api.getBlob(`/documents/${docId}/file`)
       const blobUrl = URL.createObjectURL(blob)
-      window.open(blobUrl, '_blank')
+      if (newTab) {
+        newTab.location.href = blobUrl
+      } else {
+        window.open(blobUrl, '_blank')
+      }
       setTimeout(() => {
         URL.revokeObjectURL(blobUrl)
       }, 60000)
     } catch (err: unknown) {
+      if (newTab) {
+        newTab.close()
+      }
       if (err instanceof ApiError) {
         setPdfError(err.message || 'Unable to open document PDF.')
       } else if (err instanceof Error) {
@@ -217,13 +289,7 @@ export default function NotaryRequestDetailPage() {
       setShowRejectModal(false)
       setRejectSuccess('Notarization request has been rejected.')
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setRejectError(err.message || 'Failed to reject notarization.')
-      } else if (err instanceof Error) {
-        setRejectError(err.message)
-      } else {
-        setRejectError('An unexpected error occurred while rejecting.')
-      }
+      setRejectError(mapNotarizationError(err))
     } finally {
       setRejecting(false)
     }
@@ -247,7 +313,7 @@ export default function NotaryRequestDetailPage() {
         )
 
         // 202 TX_PENDING: poll again in 2 seconds
-        if (res.code === 'TX_PENDING') {
+        if (res.code === 'TX_PENDING' || res.status === 'TX_PENDING') {
           if (attempts < maxAttempts) {
             await new Promise((resolve) => setTimeout(resolve, 2000))
             continue
@@ -291,11 +357,10 @@ export default function NotaryRequestDetailPage() {
         }
       } catch (err: unknown) {
         if (err instanceof ApiError) {
-          if (err.code === 'VERIFICATION_FAILED' || err.status === 422) {
-            setApproveState('failed')
-            setFlowError(`Verification failed: ${err.message}`)
-            return
-          }
+          // Terminal error from server
+          setApproveState('failed')
+          setFlowError(mapNotarizationError(err))
+          return
         }
 
         // Retry on network hitch before maxAttempts
@@ -305,11 +370,7 @@ export default function NotaryRequestDetailPage() {
         }
 
         setApproveState('failed')
-        if (err instanceof Error) {
-          setFlowError(err.message)
-        } else {
-          setFlowError('Receipt verification failed on server.')
-        }
+        setFlowError(mapNotarizationError(err))
         return
       }
     }
@@ -320,7 +381,7 @@ export default function NotaryRequestDetailPage() {
     if (!id) return
     setFlowError(null)
 
-    // Step 1: Preparing
+    // Step 1: Preparing (POST /notarization/:id/approve)
     setApproveState('preparing')
 
     let approveData: ApproveNotarizationResponse
@@ -328,23 +389,7 @@ export default function NotaryRequestDetailPage() {
       approveData = await api.post<ApproveNotarizationResponse>(`/notarization/${id}/approve`)
     } catch (err: unknown) {
       setApproveState('failed')
-      if (err instanceof ApiError) {
-        if (err.code === 'NOTARY_NOT_AUTHORIZED_ON_CHAIN') {
-          setFlowError('Your linked wallet is not authorized as a notary on the smart contract.')
-        } else if (err.code === 'OWNER_WALLET_REQUIRED') {
-          setFlowError('The document owner must link an Ethereum wallet before the document can be notarized.')
-        } else if (err.code === 'ALREADY_NOTARIZED') {
-          setFlowError('This document hash has already been notarized on the blockchain.')
-        } else if (err.code === 'WALLET_NOT_LINKED') {
-          setFlowError('You must link a wallet address on your Profile before approving notarizations.')
-        } else {
-          setFlowError(err.message || 'Server precondition check failed.')
-        }
-      } else if (err instanceof Error) {
-        setFlowError(err.message)
-      } else {
-        setFlowError('An unexpected error occurred during preparation.')
-      }
+      setFlowError(mapNotarizationError(err))
       return
     }
 
@@ -353,12 +398,7 @@ export default function NotaryRequestDetailPage() {
 
     let tx: ethers.ContractTransactionResponse
     try {
-      if (!window.ethereum) {
-        throw new Error('MetaMask is not available.')
-      }
-
-      const browserProvider = new ethers.BrowserProvider(window.ethereum)
-      const signer = await browserProvider.getSigner()
+      const signer = await getSigner()
       const contract = new ethers.Contract(
         approveData.contractAddress,
         approveData.abi as ethers.InterfaceAbi,
@@ -406,7 +446,7 @@ export default function NotaryRequestDetailPage() {
       return
     }
 
-    // Step 4: Verifying on backend
+    // Step 4: Verifying on backend (POST /notarization/:id/confirm)
     await executeServerConfirm(txHash)
   }
 

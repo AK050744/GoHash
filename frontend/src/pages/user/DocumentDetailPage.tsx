@@ -17,6 +17,7 @@ import Card from '../../components/ui/Card'
 import Button from '../../components/ui/Button'
 import StatusBadge from '../../components/ui/StatusBadge'
 import Alert from '../../components/ui/Alert'
+import { useAuth } from '../../context/AuthContext'
 import { api, ApiError } from '../../lib/api'
 import type {
   Document,
@@ -27,6 +28,7 @@ import type {
 
 export default function DocumentDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const { user } = useAuth()
 
   const [document, setDocument] = useState<Document | null>(null)
   const [loading, setLoading] = useState(true)
@@ -97,15 +99,25 @@ export default function DocumentDetailPage() {
     setOpeningPdf(true)
     setPdfError(null)
 
+    // Open new tab synchronously first to avoid popup blockers
+    const newTab = window.open('about:blank', '_blank')
+
     try {
       const blob = await api.getBlob(`/documents/${id}/file`)
       const blobUrl = URL.createObjectURL(blob)
-      window.open(blobUrl, '_blank')
+      if (newTab) {
+        newTab.location.href = blobUrl
+      } else {
+        window.open(blobUrl, '_blank')
+      }
       // Revoke the object URL after 60 seconds to release memory
       setTimeout(() => {
         URL.revokeObjectURL(blobUrl)
       }, 60000)
     } catch (err: unknown) {
+      if (newTab) {
+        newTab.close()
+      }
       if (err instanceof ApiError) {
         setPdfError(err.message || 'Unable to open document PDF.')
       } else if (err instanceof Error) {
@@ -280,6 +292,49 @@ export default function DocumentDetailPage() {
           <div className="flex items-center gap-2">
             <AlertCircle className="h-4 w-4 flex-shrink-0" />
             <span>{notarizationError}</span>
+          </div>
+        </Alert>
+      )}
+
+      {/* Notice when owner has no linked wallet - does NOT block the request */}
+      {!user?.walletAddress && document.status === 'PENDING' && (
+        <Alert type="warning">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="text-xs space-y-0.5">
+                <span className="font-semibold text-amber-200 block text-sm">
+                  Wallet Not Linked
+                </span>
+                <span className="text-amber-300/90">
+                  Link your wallet first. The notary needs it to record you as the document owner.
+                </span>
+              </div>
+            </div>
+            <Link to="/profile" className="flex-shrink-0">
+              <Button size="sm" variant="secondary">
+                <span>Link Wallet</span>
+              </Button>
+            </Link>
+          </div>
+        </Alert>
+      )}
+
+      {/* Rejection Alert if REJECTED */}
+      {document.status === 'REJECTED' && (
+        <Alert type="error">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold block text-red-200">
+                Notarization Request Rejected
+              </span>
+              <p className="text-xs text-red-300 mt-1">
+                {not?.rejectionReason
+                  ? `Reason: ${not.rejectionReason}`
+                  : 'This document was rejected by the notary.'}
+              </p>
+            </div>
           </div>
         </Alert>
       )}
@@ -521,6 +576,16 @@ export default function DocumentDetailPage() {
               {document.ipfsCid || 'None'}
             </span>
           </div>
+
+          {/* Rejection Reason (if rejected) */}
+          {not?.rejectionReason && (
+            <div className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+              <span className="text-surface-400">Rejection Reason</span>
+              <span className="text-red-300 font-medium text-xs break-words">
+                {not.rejectionReason}
+              </span>
+            </div>
+          )}
         </div>
       </Card>
     </div>
