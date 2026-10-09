@@ -39,6 +39,13 @@ struct NotarizedDocument {
 }
 ```
 
+> **On-Chain Semantics & Wording Standards**:
+> - The on-chain `timestamp` signifies that **the hash was recorded no later than this time**. It does not prove authorship or original creation time.
+> - Hashing (SHA-256) is a one-way cryptographic digest, **not encryption**.
+> - The document file is never stored on-chain or made public.
+> - Architecture is one shared `DocumentNotary` contract; no per-user contracts and no NFTs/tokens.
+> - Never write "immutable", "cannot be altered", "court-admissible", or "impossible collision".
+
 ---
 
 ## External Functions

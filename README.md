@@ -1,6 +1,6 @@
 # GoHash — Blockchain-Based Digital Notary System
 
-A decentralized notary platform where users can hash, timestamp, and certify documents on the blockchain, ensuring tamper-proof proof-of-existence.
+A decentralized notary platform where users can hash, timestamp, and certify documents on the blockchain, ensuring tamper-evident, independently verifiable proof-of-existence.
 
 ---
 

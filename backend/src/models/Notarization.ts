@@ -13,7 +13,7 @@ export interface INotarization extends MongooseDocument {
   blockNumber?: number | null
   contractAddress?: string | null
   chainId?: number | null
-  onChainTimestamp?: number | null  // block.timestamp from the DocumentNotarized event
+  onChainTimestamp?: number | null  // block.timestamp from DocumentNotarized event: proves hash was recorded no later than this time (not authorship/creation time)
   rejectionReason?: string | null
   failureReason?: string | null     // set when a confirm tx is reverted
   status: NotarizationStatus

@@ -68,7 +68,7 @@ describe('[Day 02] DocumentNotary — Access Control, IPFS CID & Retrieval', fun
       expect(await notary.contractOwner()).to.equal(owner.address)
     })
 
-    it('contractOwner is immutable — re-deploy changes it', async () => {
+    it('contractOwner is set at construction — re-deploy changes it', async () => {
       // Deploy a fresh instance with a different deployer
       const [, , , , , newOwner] = await ethers.getSigners()
       const Factory = await ethers.getContractFactory('DocumentNotary')

@@ -3,15 +3,15 @@ import { Shield, Lock, Globe, CheckCircle, ArrowRight, FileCheck } from 'lucide-
 import Button from '../../components/ui/Button'
 
 const steps = [
-  { icon: FileCheck, title: 'Upload your document', desc: 'Any PDF, image, or file. We compute its SHA-256 hash.' },
-  { icon: Lock,      title: 'Hash on blockchain',   desc: 'The hash is stored on Ethereum — immutable forever.' },
-  { icon: Globe,     title: 'Share & verify',        desc: 'Anyone can verify authenticity with the hash ID.' },
+  { icon: FileCheck, title: 'Upload your document', desc: 'Upload your PDF document. The server computes its cryptographic SHA-256 hash.' },
+  { icon: Lock,      title: 'Anchor on blockchain', desc: 'The hash is anchored on Ethereum — proving it was recorded no later than this time.' },
+  { icon: Globe,     title: 'Share & verify',        desc: 'Anyone can verify attestation status independently using the SHA-256 hash.' },
 ]
 
 const features = [
-  { icon: Shield,      title: 'Tamper-proof',    desc: 'Blockchain records cannot be altered or deleted.' },
-  { icon: Lock,        title: 'Privacy first',   desc: 'Only the hash is stored on-chain, never the file.' },
-  { icon: CheckCircle, title: 'Instant verify',  desc: 'Verification is immediate and costs nothing.' },
+  { icon: Shield,      title: 'Tamper-evident',     desc: 'Any modification to the file alters the SHA-256 hash, exposing tampering immediately.' },
+  { icon: Lock,        title: 'Privacy first',      desc: 'The document file is never public and never on-chain; only the hash is recorded.' },
+  { icon: CheckCircle, title: 'Instant verify',     desc: 'Verification is immediate, decentralized, and costs no gas.' },
 ]
 
 export default function LandingPage() {
@@ -24,7 +24,7 @@ export default function LandingPage() {
 
         <div className="relative max-w-3xl mx-auto space-y-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-primary-600/15 border border-primary-500/20 rounded-full text-xs font-medium text-primary-300">
-            <Shield className="h-3.5 w-3.5" /> Blockchain-Powered Notary
+            <Shield className="h-3.5 w-3.5" /> Blockchain-Powered Proof of Existence
           </div>
 
           <h1 className="text-5xl sm:text-6xl font-extrabold leading-tight bg-gradient-to-br from-white to-surface-400 bg-clip-text text-transparent">
@@ -32,7 +32,7 @@ export default function LandingPage() {
           </h1>
 
           <p className="text-lg text-surface-400 max-w-xl mx-auto">
-            GoHash turns any digital document into a tamper-proof, blockchain-verified artifact — in seconds. No lawyers, no stamps, no trust issues.
+            GoHash provides tamper-evident, independently verifiable proof-of-existence on the blockchain. Cryptographically anchored and decentralized.
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-4 pt-2">

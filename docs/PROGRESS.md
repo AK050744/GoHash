@@ -13,18 +13,27 @@
 | **Sprint 3B** | `frontend/` (Document upload & management pages) | **Complete** | Upload page, document table, document detail with PDF streaming, and 3 dashboard stat cards |
 | **Sprint 4A** | `backend/` (Blockchain services & read-only provider) | **Complete** | Contract deployment, read-only JSON-RPC provider, nonce signing & receipt auditing |
 | **Sprint 4B** | `frontend/` (MetaMask integration & notary approval) | **Complete** | WalletContext, navbar wallet button, gas-free linking, notary queue & 5-step approval machine |
-| **Sprint 5A & 5B** | Full-stack (Verification engine, admin & certificate) | **Next** | Public `/api/verify`, admin management, verifiable certificate |
+| **Sprint 5A, 5B & 5C** | Full-stack (Verification, admin, cert & visibility) | **Next** | Public `/api/verify`, admin management, cert export, metadata visibility controls |
 | **Sprint 6A & 6B** | Full-stack (Security hardening & final documentation)| **Pending** | Rate limiting, audit, and project presentation package |
 
 ---
 
 ## Locked Decisions
 
-1. **Backend Key Security**: The backend never holds any private key (deployer or notary). The NOTARY signs the notarize transaction in MetaMask in the browser. The backend utilizes a READ-ONLY JSON-RPC provider. After the browser sends the transaction hash to the backend, the backend verifies the receipt on-chain (transaction success, correct contract address, matching document hash, and verifying that the on-chain signer matches the notary's registered wallet) before marking the document status as `NOTARIZED`.
-2. **Server-Side Hashing Only**: SHA-256 is computed on the server only. The frontend never uses the Web Crypto API or hashes files client-side; it displays the hash returned by the API.
-3. **Off-Chain Document Storage**: The PDF is never stored on-chain. Only the cryptographic SHA-256 hash, timestamp, and verification metadata are committed to the blockchain.
-4. **Database Environment**: Local MongoDB runs in Docker (container name `gohash-mongo`, host port `27017`). The backend requires a real MongoDB instance and immediately terminates with exit code 1 if MongoDB is unreachable; all in-memory database fallbacks have been removed.
-5. **Project Terminology & Framing**: The system is framed as providing **tamper-evident** and **independently verifiable** proof-of-existence. The system is never described as "100% immutable" or as something that "replaces legal notaries".
+- **(a) Backend Key Security**: The backend never holds any private key (deployer or notary). The NOTARY signs the notarize transaction in MetaMask in the browser. The backend utilizes a READ-ONLY JSON-RPC provider. After the browser sends the transaction hash to the backend, the backend verifies the receipt on-chain (transaction success, correct contract address, matching document hash, and verifying that the on-chain signer matches the notary's registered wallet) before marking the document status as `NOTARIZED`.
+- **(b) Server-Side Hashing Only**: SHA-256 is computed on the server only. The frontend never uses the Web Crypto API or hashes files client-side; it displays the hash returned by the API.
+- **(c) Off-Chain Document Storage**: The PDF is never stored on-chain. Only the cryptographic SHA-256 hash, timestamp, and verification metadata are committed to the blockchain.
+- **(d) Database Environment**: Local MongoDB runs in Docker (container name `gohash-mongo`, host port `27017`). The backend requires a real MongoDB instance and immediately terminates with exit code 1 if MongoDB is unreachable; all in-memory database fallbacks have been removed.
+- **(e) Project Terminology & Framing**: The system is framed as providing **tamper-evident** and **independently verifiable** proof-of-existence. The system is never described as "100% immutable" or as something that "replaces legal notaries".
+- **(f) Shared Contract Architecture**: One shared DocumentNotary contract; no per-user contracts and no NFTs/tokens.
+- **(g) Off-Chain Privacy & Metadata Visibility**: The document file is never public and never on-chain; "visibility" (Sprint 5C) only controls which off-chain metadata a public verification result shows.
+
+### Wording & Terminology Standards (Code Comments, API Messages & Docs)
+
+- **On-chain timestamp semantics**: An on-chain timestamp means **"the hash was recorded no later than this time"**, not authorship or creation time.
+- **Hashing vs. encryption**: Hashing is a one-way cryptographic digest; **hashing is not encryption**. Never describe document hashing as encryption or "encrypted".
+- **Forbidden terminology**: Never write `"immutable"`, `"cannot be altered"`, `"court-admissible"`, or `"impossible collision"`.
+- **Approved terminology**: Use `"tamper-evident"`, `"independently verifiable"`, and `"proof-of-existence"`.
 
 ---
 
@@ -165,6 +174,10 @@ Local database services run through Docker container `gohash-mongo` using the of
 ### Sprint 5B (Admin Management & Verifiable Certificates)
 - [ ] Admin pages (`/admin/dashboard` & `/admin/notaries`): system overview metrics, notary promotion, and notary deactivation.
 - [ ] Verifiable digital notarization certificate generation / export (PDF receipt summarizing on-chain attestation details).
+
+### Sprint 5C (Metadata Visibility & Privacy Controls)
+- [ ] Document visibility controls (`PUBLIC` vs `PRIVATE` off-chain metadata exposure).
+- [ ] The document file is never public and never on-chain; "visibility" only controls which off-chain metadata a public verification result shows.
 
 ### Sprint 6A (Security Hardening & Production Polish)
 - [ ] Rate limiting on authentication and upload endpoints.

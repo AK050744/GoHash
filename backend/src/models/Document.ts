@@ -61,6 +61,8 @@ const DocumentSchema = new Schema<IDocument>(
       type: String,
       default: null,
     },
+    // Visibility controls which off-chain metadata a public verification result shows (Sprint 5C).
+    // The document file itself is NEVER public and NEVER stored on-chain.
     visibility: {
       type: String,
       enum: ['PRIVATE', 'PUBLIC'],
