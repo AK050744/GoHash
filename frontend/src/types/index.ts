@@ -25,6 +25,26 @@ export interface MeResponse {
 
 export type DocumentStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'NOTARIZED'
 
+export type NotarizationStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'CONFIRMED' | 'FAILED'
+
+export interface DocumentNotarization {
+  id: string
+  documentId?: string
+  status: NotarizationStatus
+  documentHash?: string
+  transactionHash?: string | null
+  blockNumber?: number | null
+  notaryWallet?: string | null
+  notaryId?: string | null
+  contractAddress?: string | null
+  timestamp?: number | null
+  onChainTimestamp?: number | null
+  rejectionReason?: string | null
+  failureReason?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
 export interface Document {
   id: string
   originalName: string
@@ -38,6 +58,7 @@ export interface Document {
   ownerId?: string
   createdAt: string
   updatedAt?: string
+  notarization?: DocumentNotarization | null
 }
 
 export type DocumentRecord = Document
@@ -89,3 +110,61 @@ export interface NotarizationRequestResponse {
   }
 }
 
+export interface PendingNotarizationItem {
+  id: string
+  documentId: string
+  requestedBy: string
+  notaryId?: string | null
+  notaryWallet?: string | null
+  documentHash: string
+  transactionHash?: string | null
+  blockNumber?: number | null
+  contractAddress?: string | null
+  chainId?: number | null
+  onChainTimestamp?: number | null
+  rejectionReason?: string | null
+  failureReason?: string | null
+  status: NotarizationStatus
+  createdAt: string
+  updatedAt: string
+  document?: Document | null
+  owner?: { name?: string; email?: string; walletAddress?: string } | null
+}
+
+export interface PendingNotarizationsResponse {
+  success: boolean
+  notarizations: PendingNotarizationItem[]
+}
+
+export interface NotarizationDetailResponse {
+  success: boolean
+  notarization: PendingNotarizationItem
+}
+
+export interface ApproveNotarizationResponse {
+  success: boolean
+  notarization: PendingNotarizationItem
+  contractAddress: string
+  chainId: number
+  abi: unknown[]
+  method: string
+  args: [string, string, string]
+}
+
+export interface ConfirmNotarizationResponse {
+  success: boolean
+  code?: string
+  message?: string
+  notarization?: PendingNotarizationItem
+}
+
+export interface WalletNonceResponse {
+  success: boolean
+  message: string
+  expiresAt: string
+}
+
+export interface WalletLinkResponse {
+  success: boolean
+  user: User
+}

@@ -37,6 +37,7 @@ export default function DocumentDetailPage() {
   const [openingPdf, setOpeningPdf] = useState(false)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [copiedHash, setCopiedHash] = useState(false)
+  const [copiedTxHash, setCopiedTxHash] = useState(false)
 
   // Notarization request state
   const [showConfirmModal, setShowConfirmModal] = useState(false)
@@ -85,6 +86,12 @@ export default function DocumentDetailPage() {
     setTimeout(() => setCopiedHash(false), 2000)
   }
 
+  const handleCopyTxHash = (txHash: string) => {
+    navigator.clipboard.writeText(txHash)
+    setCopiedTxHash(true)
+    setTimeout(() => setCopiedTxHash(false), 2000)
+  }
+
   const handleOpenPdf = async () => {
     if (!id || openingPdf) return
     setOpeningPdf(true)
@@ -121,9 +128,10 @@ export default function DocumentDetailPage() {
       await api.post<NotarizationRequestResponse>('/notarization/request', {
         documentId: id,
       })
-      setNotarizationSuccess('Notarization requested')
+      setNotarizationSuccess('Notarization request submitted successfully')
       setIsRequestDisabled(true)
       setShowConfirmModal(false)
+      fetchDocument()
     } catch (err: unknown) {
       setShowConfirmModal(false)
       if (err instanceof ApiError) {
@@ -233,6 +241,9 @@ export default function DocumentDetailPage() {
     )
   }
 
+  const not = document.notarization
+  const hasNotarization = Boolean(not)
+
   // Success State
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -301,7 +312,8 @@ export default function DocumentDetailPage() {
               <ExternalLink className="h-4 w-4" /> Open PDF
             </Button>
 
-            {document.status === 'PENDING' && (
+            {/* Hide "Request Notarization" once a notarization exists or if not PENDING */}
+            {document.status === 'PENDING' && !hasNotarization && (
               <Button
                 variant="primary"
                 disabled={isRequestDisabled || requestingNotarization}
@@ -410,7 +422,7 @@ export default function DocumentDetailPage() {
         </div>
       </Card>
 
-      {/* Blockchain & Notarization Placeholder Rows */}
+      {/* Blockchain & Notarization Status */}
       <Card className="space-y-4">
         <div className="flex items-center gap-2 border-b border-surface-700 pb-3">
           <Shield className="h-5 w-5 text-primary-400" />
@@ -421,38 +433,92 @@ export default function DocumentDetailPage() {
           {/* Notary */}
           <div className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
             <span className="text-surface-400">Notary</span>
-            <span className="text-surface-500 font-mono text-xs">Not notarized yet</span>
+            {not?.notaryWallet ? (
+              <span className="text-white font-medium text-xs">Authorized Notary</span>
+            ) : (
+              <span className="text-surface-500 font-mono text-xs">Not notarized yet</span>
+            )}
           </div>
 
           {/* Notary wallet */}
           <div className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
             <span className="text-surface-400">Notary Wallet</span>
-            <span className="text-surface-500 font-mono text-xs">Not notarized yet</span>
+            {not?.notaryWallet ? (
+              <code className="text-xs font-mono text-primary-300 break-all select-all">
+                {not.notaryWallet}
+              </code>
+            ) : (
+              <span className="text-surface-500 font-mono text-xs">Not notarized yet</span>
+            )}
           </div>
 
           {/* Timestamp */}
           <div className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
             <span className="text-surface-400">Timestamp</span>
-            <span className="text-surface-500 font-mono text-xs">Not notarized yet</span>
+            {not?.timestamp ? (
+              <span className="text-white font-medium text-xs">
+                {formatDate(new Date(not.timestamp * 1000).toISOString())}
+              </span>
+            ) : (
+              <span className="text-surface-500 font-mono text-xs">Not notarized yet</span>
+            )}
           </div>
 
           {/* Transaction hash */}
           <div className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
             <span className="text-surface-400">Transaction Hash</span>
-            <span className="text-surface-500 font-mono text-xs">Not notarized yet</span>
+            {not?.transactionHash ? (
+              <div className="flex items-center gap-2">
+                <code className="text-xs font-mono text-emerald-300 break-all select-all">
+                  {not.transactionHash}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => handleCopyTxHash(not.transactionHash!)}
+                  className="p-1 hover:text-white text-surface-400 rounded transition flex-shrink-0"
+                  title="Copy transaction hash"
+                >
+                  {copiedTxHash ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
+            ) : (
+              <span className="text-surface-500 font-mono text-xs">Not notarized yet</span>
+            )}
+          </div>
+
+          {/* Block number */}
+          <div className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+            <span className="text-surface-400">Block Number</span>
+            {not?.blockNumber ? (
+              <span className="text-white font-mono font-medium text-xs">
+                #{not.blockNumber}
+              </span>
+            ) : (
+              <span className="text-surface-500 font-mono text-xs">Not notarized yet</span>
+            )}
           </div>
 
           {/* Contract address */}
           <div className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
             <span className="text-surface-400">Contract Address</span>
-            <span className="text-surface-500 font-mono text-xs">Not notarized yet</span>
+            {not?.contractAddress ? (
+              <code className="text-xs font-mono text-surface-300 break-all select-all">
+                {not.contractAddress}
+              </code>
+            ) : (
+              <span className="text-surface-500 font-mono text-xs">Not notarized yet</span>
+            )}
           </div>
 
           {/* IPFS CID */}
           <div className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
             <span className="text-surface-400">IPFS CID</span>
             <span className="text-surface-500 font-mono text-xs">
-              {document.ipfsCid || 'Not notarized yet'}
+              {document.ipfsCid || 'None'}
             </span>
           </div>
         </div>

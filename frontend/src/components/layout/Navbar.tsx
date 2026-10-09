@@ -1,8 +1,8 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { Shield } from 'lucide-react'
-import { useAuth } from '../../context/AuthContext'
-import { roleDashboard } from '../../context/AuthContext'
+import { useAuth, roleDashboard } from '../../context/AuthContext'
 import Button from '../ui/Button'
+import WalletButton from '../wallet/WalletButton'
 
 export default function Navbar() {
   const { user, logout } = useAuth()
@@ -19,6 +19,8 @@ export default function Navbar() {
         </Link>
 
         <div className="flex items-center gap-3">
+          <WalletButton />
+
           {user ? (
             <>
               <Link

@@ -11,8 +11,9 @@
 | **Sprint 3A-TESTFIX** | `backend/` (Test isolation & standalone runner) | **Complete** | Ephemeral port isolation, test DB isolation, fail-fast Mongo check |
 | **Sprint 3A-DBFIX** | `backend/` (Dev server fail-fast DB & test route purge) | **Complete** | Removed in-memory fallback (exits code 1 if down), purged test-admin route |
 | **Sprint 3B** | `frontend/` (Document upload & management pages) | **Complete** | Upload page, document table, document detail with PDF streaming, and 3 dashboard stat cards |
-| **Sprint 4A & 4B** | Full-stack (Blockchain integration & notary actions) | **Next** | Local node deployment, read-only RPC, MetaMask signing |
-| **Sprint 5A & 5B** | Full-stack (Verification engine, admin & certificate) | **Pending** | Public `/api/verify`, admin management, verifiable certificate |
+| **Sprint 4A** | `backend/` (Blockchain services & read-only provider) | **Complete** | Contract deployment, read-only JSON-RPC provider, nonce signing & receipt auditing |
+| **Sprint 4B** | `frontend/` (MetaMask integration & notary approval) | **Complete** | WalletContext, navbar wallet button, gas-free linking, notary queue & 5-step approval machine |
+| **Sprint 5A & 5B** | Full-stack (Verification engine, admin & certificate) | **Next** | Public `/api/verify`, admin management, verifiable certificate |
 | **Sprint 6A & 6B** | Full-stack (Security hardening & final documentation)| **Pending** | Rate limiting, audit, and project presentation package |
 
 ---
@@ -112,22 +113,50 @@ Local database services run through Docker container `gohash-mongo` using the of
   - Skeletons during loading; retry button on error; no permanent "—".
   - 5 most recent documents displayed with status badges, truncated hash copy, and direct links.
 
+### Sprint 4A (Blockchain Environment & Read-Only RPC Provider)
+- Fixed TypeScript compilation errors in `blockchain/scripts/deploy-local.ts` and automated export of deployment artifact to `blockchain/deployments/localhost.json`.
+- Implemented read-only JSON-RPC provider in backend (`services/blockchain.service.ts`) without any private keys or signer instances.
+- Implemented cryptographic wallet link verification flow (`POST /api/auth/wallet/nonce` and `PATCH /api/auth/wallet`) utilizing `ethers.verifyMessage`.
+- Implemented on-chain receipt verification (`BlockchainService.verifyReceipt`) auditing transaction status, contract address, document hash bytes32, and notary signer authorization.
+- Added notarization workflow routes: `GET /api/notarization/pending`, `GET /api/notarization/:id`, `POST /api/notarization/:id/reject`, `POST /api/notarization/:id/approve`, and `POST /api/notarization/:id/confirm`.
+
+### Sprint 4B (Frontend MetaMask Integration & Notary On-Chain Attestation Flow)
+- **Wallet Context (`context/WalletContext.tsx`)**:
+  - Ethers v6 `BrowserProvider` connected over `window.ethereum`.
+  - Account connection via `eth_requestAccounts`, silent auto-discovery via `eth_accounts`, and best-effort permission revocation on disconnect (`wallet_revokePermissions`).
+  - Active network tracking and switching (`wallet_switchEthereumChain` with fallback to `wallet_addEthereumChain` on error 4902).
+  - Robust event listeners for `accountsChanged` and `chainChanged` with clean unmount teardown.
+  - Detailed error mapping: MetaMask not installed (direct link to metamask.io), user rejected (code 4001 / ACTION_REJECTED), and pending requests (-32002).
+- **Wallet Navbar Control (`components/wallet/WalletButton.tsx`)**:
+  - Integrated into both `Navbar.tsx` and authenticated `AppLayout.tsx`.
+  - Shows formatted short address (`0x1234...5678`), live network dot, wrong-network warning badge with one-click chain switch, and dropdown menu with clipboard copy and disconnect.
+- **Gas-Free Wallet Linking (`pages/user/ProfilePage.tsx`)**:
+  - Available for all roles (`USER`, `NOTARY`, `ADMIN`).
+  - Gas-free challenge nonce signing: calls `POST /api/auth/wallet/nonce`, prompts `signer.signMessage(message)`, and patches `PATCH /api/auth/wallet`.
+  - Displays linked wallet status, clipboard copy, and mismatch warning if the connected MetaMask account differs from the linked GoHash account.
+  - Explanatory copy: *"Signing this message is free. It does not send a transaction and GoHash never sees your private key."*
+  - Error mapping for `WALLET_IN_USE` and `NONCE_INVALID` (with retry action).
+- **Notary Review Dashboard (`pages/notary/NotaryDashboardPage.tsx`)**:
+  - Role-guarded for `NOTARY` only.
+  - Prominent warning banner when the notary has no linked wallet, directing them to the Profile page.
+  - Table of pending requests with document name, owner identifier, truncated SHA-256 fingerprint with copy button, creation date, and direct review action.
+- **Request Review & 5-Stage Approval State Machine (`pages/notary/NotaryRequestDetailPage.tsx`)**:
+  - Full document metadata inspection and authenticated PDF preview via JWT blob streaming (`/api/documents/:id/file`).
+  - Rejection modal requiring explicit justification reason (`POST /api/notarization/:id/reject`).
+  - Explicit approval state machine:
+    `idle` → `preparing` (`POST /api/notarization/:id/approve`) → `awaiting-wallet` (MetaMask popup) → `pending` (tx broadcasted & waiting for block) → `verifying` (`POST /api/notarization/:id/confirm`) → `confirmed` | `failed` | `rejected-by-user`.
+  - Polling every 2s up to 30s on HTTP 202 `TX_PENDING`.
+  - Prevents double-submission and disables action buttons while in progress.
+  - Non-sensitive transaction hash persisted in `sessionStorage` (`notarization_tx_<id>`) enabling seamless "Confirm previous transaction" recovery upon browser refresh.
+  - Server error code mapping: `NOTARY_NOT_AUTHORIZED_ON_CHAIN`, `OWNER_WALLET_REQUIRED`, `ALREADY_NOTARIZED`, `VERIFICATION_FAILED`.
+- **Document Details Owner View (`pages/user/DocumentDetailPage.tsx`)**:
+  - Populates on-chain notarization fields from `document.notarization`: Notary, Notary wallet, Timestamp, Transaction hash (with copy button), Block number, and Contract address.
+  - Updates status badge to `NOTARIZED`.
+  - Hides "Request Notarization" button once a notarization request exists.
+
 ---
 
 ## Remaining Backlog
-
-### Sprint 4A (Blockchain Environment & Read-Only RPC Provider) — NEXT
-- [ ] Fix 2 TypeScript compilation errors in `blockchain/scripts/deploy-local.ts`.
-- [ ] Run Hardhat local node and deploy `DocumentNotary.sol` to record contract address.
-- [ ] Implement backend read-only JSON-RPC provider in `backend/src/services/blockchain.service.ts` using `ethers.JsonRpcProvider`.
-
-### Sprint 4B (Notary Review & On-Chain Verification Workflow)
-- [ ] Implement `GET /api/notarization/pending` for notary review queue.
-- [ ] Notary UI (`/notary/dashboard` and `/notary/requests/:id`): review document details and inline PDF.
-- [ ] MetaMask attestation signing in browser: Notary signs `notarizeDocument()` transaction.
-- [ ] Implement `POST /api/notarization/:id/approve`: browser passes txHash; backend inspects on-chain receipt (verifies transaction success, matching contract address, matching document hash, and verifying that the signer matches the notary's wallet) before marking `NOTARIZED`.
-- [ ] Implement `POST /api/notarization/:id/reject`: records rejection reason and marks document `REJECTED`.
-- [ ] Implement `GET /api/blockchain/:documentId`: queries smart contract state for raw attestation receipt.
 
 ### Sprint 5A (Public Independent Verification Engine)
 - [ ] Implement `POST /api/verify`: accepts SHA-256 hash string or PDF file; verifies against database records and cross-checks on-chain smart contract data.
@@ -191,9 +220,67 @@ npm run build
 
 ---
 
-## Known Issues
+### 5. How to Run the Local Chain Demo
 
-1. **`blockchain/scripts/deploy-local.ts` TypeScript Errors**: Contains 2 TypeScript errors on lines 55 and 65 (`Property 'addNotary' does not exist on type 'BaseContract'` and `Property 'notarize' does not exist on type 'BaseContract'`), to be fixed prior to Sprint 4.
-2. **Headless Browser Driver in Sandbox**: Playwright driver binary auto-download encounters network restrictions in sandbox; manual browser testing at `http://localhost:5173` is used.
-3. **LocalStorage JWT Storage**: Storing JWT in `localStorage` requires rigorous XSS protections (strictly avoiding `dangerouslySetInnerHTML`). For production deployment, httpOnly cookies are recommended.
-4. **Document Details Notarization Request State**: Document details do not include notarization request state yet (planned for Sprint 4A).
+To execute the complete end-to-end notarization workflow with a local blockchain, follow these steps:
+
+#### Step 1: Start Hardhat Local Blockchain Node
+In a dedicated terminal:
+```powershell
+cd blockchain
+npx hardhat node
+```
+This runs a local JSON-RPC Ethereum node at `http://127.0.0.1:8545` (Chain ID: `31337`).  
+Keep note of **Account #0** (Deployer) and **Account #1** (Notary) printed in the console.
+
+#### Step 2: Deploy Contract and Authorize Notary
+In a second terminal:
+```powershell
+cd blockchain
+npx hardhat run scripts/deploy-local.ts --network localhost
+```
+This deploys `DocumentNotary.sol`, authorizes Account #1 as a certified notary, and exports `blockchain/deployments/localhost.json`.
+
+#### Step 3: Start Backend and Frontend
+- Terminal 3 (Backend):
+  ```powershell
+  cd backend
+  npm run dev
+  ```
+- Terminal 4 (Frontend):
+  ```powershell
+  cd frontend
+  npm run dev
+  ```
+
+#### Step 4: Configure MetaMask
+1. Open MetaMask in your browser.
+2. Add a custom network:
+   - **Network Name**: Hardhat Local
+   - **RPC URL**: `http://127.0.0.1:8545`
+   - **Chain ID**: `31337`
+   - **Currency Symbol**: `ETH`
+3. Import the Notary Account into MetaMask using the private key for **Account #1** provided in the Hardhat node console (`0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d`).
+4. Optionally import **Account #2** for a regular user account.
+
+#### Step 5: End-to-End Walkthrough
+1. **User Workflow**:
+   - Navigate to `http://localhost:5173/register` and register as a regular user (e.g. Alice).
+   - In MetaMask, switch to Alice's account (Account #2).
+   - Go to `/profile`, click **Link MetaMask Wallet**, and sign the gas-free challenge message.
+   - Go to `/upload`, upload a PDF document, and copy its computed SHA-256 hash.
+   - Go to `/documents/:id`, click **Request Notarization**, and confirm the request. Status transitions to `REQUESTED`.
+2. **Notary Workflow**:
+   - Log out and log into a user with the `NOTARY` role (or promote a user).
+   - In MetaMask, switch to the authorized Notary account (Account #1).
+   - Go to `/profile`, click **Link MetaMask Wallet**, and sign the message to associate Account #1.
+   - Navigate to `/notary/dashboard`. The document appears in the **Pending Requests Queue**.
+   - Click **Review** to open `/notary/requests/:id`.
+   - Click **Open PDF** to inspect the document via authenticated JWT streaming.
+   - Click **Approve & Notarize**.
+   - Observe the 5-stage state machine:
+     `Preparing` → `MetaMask popup` → `Pending on-chain` → `Server verification` → `Confirmed`.
+3. **Verify On-Chain Attestation**:
+   - Log back into Alice's account and view `/documents/:id`.
+   - Notice the status badge is updated to `NOTARIZED`.
+   - The Blockchain & Notarization card now displays the Notary identity, Notary wallet, block timestamp, transaction hash, block number, and contract address.

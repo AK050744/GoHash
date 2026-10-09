@@ -17,6 +17,7 @@ interface AuthCtx {
   login: (email: string, password: string) => Promise<User>
   register: (name: string, email: string, password: string, confirmPassword: string) => Promise<User>
   logout: () => void
+  updateUser: (u: User) => void
 }
 
 const Ctx = createContext<AuthCtx | undefined>(undefined)
@@ -61,8 +62,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
+  const updateUser = (u: User) => {
+    setUser(u)
+  }
+
   return (
-    <Ctx.Provider value={{ user, token, isLoading, login, register, logout }}>
+    <Ctx.Provider value={{ user, token, isLoading, login, register, logout, updateUser }}>
       {children}
     </Ctx.Provider>
   )
