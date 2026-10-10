@@ -295,10 +295,10 @@ If the Hardhat node was restarted or the contract redeployed, restart the backen
 3. Import the two Hardhat accounts:
    - **Account #1 (Notary)**:
      - Address: `0x70997970C51812dc3A010C7d01b50e0d17dc79C8`
-     - Private key from Hardhat node console: `0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d`
+     - Private key from Hardhat node console: `<copy the Account #1 private key from the hardhat node output>`
    - **Account #2 (Regular User / Document Owner)**:
      - Address: `0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC`
-     - Private key from Hardhat node console: `0x5de4111afa1a4b94908f83103eb2f953b0e042d5b3002c5e5ba84253ddf29c2b`
+     - Private key from Hardhat node console: `<copy the Account #2 private key from the hardhat node output>`
 
 #### Step 5: End-to-End Walkthrough
 1. **User Workflow**:
