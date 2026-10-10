@@ -596,7 +596,15 @@ All UI copy, API responses, error messages, code comments, and documentation mus
   - `403 Forbidden` (`FORBIDDEN`): Caller is not the notary assigned to this request.
   - `404 Not Found` (`NOT_FOUND`): Notarization record not found.
   - `409 Conflict` (`INVALID_STATE`): Request is not in `APPROVED` or `FAILED` status, or already confirmed with a different hash.
-  - `422 Unprocessable Entity` (`VERIFICATION_FAILED`): Receipt verification failed (wrong contract, wrong signer, wrong hash, event missing, or duplicate transaction).
+  - `422 Unprocessable Entity` (`VERIFICATION_FAILED`): Receipt verification failed on-chain or duplicate transaction. The `error.message` returns one of the following specific reason strings:
+    - `TX_NOT_FOUND`: Transaction hash not found on chain.
+    - `WRONG_CONTRACT`: Transaction recipient address does not match the configured contract address.
+    - `WRONG_SIGNER`: Transaction sender address does not match the approving notary's linked wallet.
+    - `WRONG_CHAIN`: Transaction was submitted on a different network chain ID than configured.
+    - `EVENT_NOT_FOUND`: `DocumentNotarized` event log is missing from the transaction receipt.
+    - `WRONG_HASH`: Event document hash parameter does not match the document's SHA-256 hash.
+    - `WRONG_EVENT_NOTARY`: Event notary address parameter does not match the approving notary's wallet.
+    - `Transaction hash is already used by another confirmed notarization`: Transaction hash has already been used by another confirmed notarization.
 
 ---
 
