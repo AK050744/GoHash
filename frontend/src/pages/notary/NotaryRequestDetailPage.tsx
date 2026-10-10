@@ -214,7 +214,7 @@ export default function NotaryRequestDetailPage() {
         if (msg.includes('WRONG_HASH')) {
           return 'Verification failed: Document hash in transaction receipt does not match this document.'
         }
-        if (msg.toLowerCase().includes('already used') || msg.toLowerCase().includes('duplicate')) {
+        if (msg.includes('already used by another confirmed notarization')) {
           return 'Verification failed: Transaction hash is already used by another confirmed notarization.'
         }
         if (msg.includes('WRONG_CHAIN')) {
@@ -222,6 +222,9 @@ export default function NotaryRequestDetailPage() {
         }
         if (msg.includes('EVENT_NOT_FOUND')) {
           return 'Verification failed: DocumentNotarized event missing from transaction receipt.'
+        }
+        if (msg.includes('WRONG_EVENT_NOTARY')) {
+          return 'Verification failed: The on-chain event records a different notary than your linked wallet.'
         }
         return `Verification failed: ${msg}`
       }
