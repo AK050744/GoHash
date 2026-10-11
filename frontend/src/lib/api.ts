@@ -103,7 +103,7 @@ export function upload<T = unknown>(
         data = null
       }
 
-      if (xhr.status === 401) {
+      if (xhr.status === 401 && !path.startsWith('/verify')) {
         localStorage.removeItem('token')
         if (!window.location.pathname.startsWith('/login')) {
           window.location.replace('/login')

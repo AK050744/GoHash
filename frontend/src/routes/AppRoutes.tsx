@@ -17,6 +17,7 @@ import DocumentsPage         from '../pages/user/DocumentsPage'
 import UploadPage            from '../pages/user/UploadPage'
 import ProfilePage           from '../pages/user/ProfilePage'
 import DocumentDetailPage    from '../pages/user/DocumentDetailPage'
+import NotarizationCertificatePage from '../pages/documents/NotarizationCertificatePage'
 
 // Notary pages
 import NotaryDashboardPage       from '../pages/notary/NotaryDashboardPage'
@@ -50,6 +51,7 @@ export default function AppRoutes() {
         <Route path="/dashboard"        element={<DashboardPage />} />
         <Route path="/documents"        element={<DocumentsPage />} />
         <Route path="/documents/:id"    element={<DocumentDetailPage />} />
+        <Route path="/documents/:id/certificate" element={<NotarizationCertificatePage />} />
         <Route path="/upload"           element={<UploadPage />} />
         <Route path="/profile"          element={<ProfilePage />} />
 

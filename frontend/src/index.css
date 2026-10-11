@@ -26,3 +26,14 @@
     placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 transition;
   }
 }
+
+@media print {
+  @page {
+    margin: 1.5cm;
+    size: auto;
+  }
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}

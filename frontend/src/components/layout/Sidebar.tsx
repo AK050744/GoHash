@@ -70,7 +70,7 @@ export default function Sidebar({ open, onClose }: Props) {
 
       <aside
         className={`fixed inset-y-0 left-0 z-40 w-64 bg-surface-900 border-r border-surface-700 flex flex-col
-          transition-transform duration-300 lg:static lg:translate-x-0
+          transition-transform duration-300 lg:static lg:translate-x-0 print:hidden
           ${open ? 'translate-x-0' : '-translate-x-full'}`}
       >
         {/* Header */}

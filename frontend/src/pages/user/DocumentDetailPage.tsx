@@ -367,6 +367,14 @@ export default function DocumentDetailPage() {
               <ExternalLink className="h-4 w-4" /> Open PDF
             </Button>
 
+            {document.status === 'NOTARIZED' && (
+              <Link to={`/documents/${document.id}/certificate`}>
+                <Button variant="primary">
+                  <Shield className="h-4 w-4" /> View Certificate
+                </Button>
+              </Link>
+            )}
+
             {/* Hide "Request Notarization" once a notarization exists or if not PENDING */}
             {document.status === 'PENDING' && !hasNotarization && (
               <Button

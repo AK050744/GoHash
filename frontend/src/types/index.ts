@@ -169,3 +169,98 @@ export interface WalletLinkResponse {
   success: boolean
   user: User
 }
+
+// ─── Verification API types ──────────────────────────────────────────────────
+
+export interface VerifyRecord {
+  ownerWallet: string
+  notaryWallet: string
+  timestamp: number
+  contractAddress: string
+  transactionHash?: string | null
+  blockNumber?: number | null
+}
+
+export interface VerifyDocumentMeta {
+  id?: string
+  originalName?: string
+}
+
+export interface VerifyResponse {
+  success: boolean
+  status: 'VERIFIED' | 'NOT_VERIFIED'
+  hash: string
+  record?: VerifyRecord
+  document?: VerifyDocumentMeta
+  message?: string
+}
+
+// ─── Blockchain Contract Info (Admin) ────────────────────────────────────────
+
+export interface BlockchainContractResponse {
+  success: boolean
+  contractAddress: string
+  chainId: number
+  abi: string[]
+}
+
+// ─── Admin API types ─────────────────────────────────────────────────────────
+
+export interface AdminUser extends User {
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface AdminUsersResponse {
+  success: boolean
+  users: AdminUser[]
+  total: number
+}
+
+export interface AdminNotary extends AdminUser {
+  linkedWallet: string | null
+  onChainAuthorized: boolean | null
+}
+
+export interface AdminNotariesResponse {
+  success: boolean
+  notaries: AdminNotary[]
+  chainAvailable: boolean
+}
+
+export interface AdminActivityItem {
+  id: string
+  status: NotarizationStatus
+  documentName: string | null
+  requesterName: string | null
+  notaryWallet: string | null
+  transactionHash: string | null
+  blockNumber: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AdminActivityResponse {
+  success: boolean
+  activity: AdminActivityItem[]
+}
+
+export interface AdminStatsResponse {
+  success: boolean
+  users: {
+    total: number
+    byRole: { USER: number; NOTARY: number; ADMIN: number }
+  }
+  notaries: {
+    total: number
+    withWallet: number
+  }
+  documents: {
+    total: number
+    byStatus: { PENDING: number; APPROVED: number; REJECTED: number; NOTARIZED: number }
+  }
+  notarizations: {
+    total: number
+    byStatus: { REQUESTED: number; APPROVED: number; REJECTED: number; CONFIRMED: number; FAILED: number }
+  }
+}

@@ -13,8 +13,9 @@
 | **Sprint 3B** | `frontend/` (Document upload & management pages) | **Complete** | Upload page, document table, document detail with PDF streaming, and 3 dashboard stat cards |
 | **Sprint 4A** | `backend/` (Blockchain services & read-only provider) | **Complete** | Contract deployment, read-only JSON-RPC provider, nonce signing & receipt auditing |
 | **Sprint 4B** | `frontend/` (MetaMask integration & notary approval) | **Complete** | WalletContext, navbar wallet button, gas-free linking, notary queue & 5-step approval machine |
-| **Sprint 5A, 5B & 5C** | Full-stack (Verification, admin, cert & visibility) | **Next** | Public `/api/verify`, admin management, cert export, metadata visibility controls |
-| **Sprint 6A & 6B** | Full-stack (Security hardening & final documentation)| **Pending** | Rate limiting, audit, and project presentation package |
+| **Sprint 5A & 5B** | Full-stack (Verification API, admin management, certificate) | **Complete** | Public /api/verify, admin dashboard & notaries, on-chain addNotary/removeNotary, certificate export |
+| **Sprint 5C** | Full-stack (Metadata visibility controls) | **Next** | Public verification metadata visibility controls |
+| **Sprint 6A & 6B** | Full-stack (Security hardening & final documentation)| **Pending** | Rate limiting audit, security checklist, and project presentation package |
 
 ---
 
@@ -321,3 +322,65 @@ If the Hardhat node was restarted or the contract redeployed, restart the backen
    - Log back into Alice's account and view `/documents/:id`.
    - Notice the status badge is updated to `NOTARIZED`.
    - The Blockchain & Notarization card now displays the Notary identity, Notary wallet, block timestamp, transaction hash, block number, and contract address.
+
+---
+
+### Sprint 5A & 5B (Verification API, Admin Management & Notarization Certificate)
+
+- **Public Verification Pipeline (`/api/verify` & `/verify` page)**:
+  - Server-side in-memory SHA-256 calculation; uploaded PDF files are never stored to disk or DB during verification.
+  - Read-only on-chain verification using `DocumentNotary.exists()` and `DocumentNotary.getDocument()`.
+  - Unmistakable UI states with `aria-live` announcement:
+    - `VERIFIED`: green panel with checkmark, original document details, SHA-256 digest, notary wallet, block timestamp, transaction hash, block number, and contract address.
+    - `TAMPERED / VERIFICATION FAILED`: red panel with cross icon, computed hash, and clear explanatory message.
+  - Comprehensive error handling: `INVALID_FILE`, `FILE_TOO_LARGE`, `RATE_LIMITED` (HTTP 429), `CHAIN_UNREACHABLE`, and `CONTRACT_NOT_DEPLOYED`.
+- **Admin Dashboard (`/admin/dashboard`)**:
+  - Real-time aggregated statistics from `GET /api/admin/stats`: total users by role, notaries with linked wallets, documents by status, and notarization pipeline stages.
+  - Recent activity feed from `GET /api/admin/activity` displaying the 50 most recent notarization events with live status badges.
+- **Admin Notary & User Management (`/admin/notaries`)**:
+  - Live table combining user directory with live on-chain authorization status from `GET /api/admin/notaries`.
+  - Search and role filtering (`USER`, `NOTARY`, `ADMIN`).
+  - Off-chain role promotion/demotion (`PATCH /api/admin/users/:id/role`) with confirmation dialogs and notice that role change does not affect smart contract authorization.
+  - Account status toggling (`PATCH /api/admin/users/:id/status`) with immediate token invalidation for disabled users.
+  - Self-modification guards: administrators cannot modify their own role or active status (mapped to `CANNOT_MODIFY_SELF`).
+  - On-chain `Authorize` and `Revoke` functions through MetaMask:
+    - Interacts directly with `addNotary(address)` and `removeNotary(address)` on `DocumentNotary.sol`.
+    - Retrieves contract address and ABI dynamically from `GET /api/blockchain/contract` (zero hardcoding).
+    - Validates connected wallet matches `contractOwner()` before initiating transactions.
+    - Full transaction state machine (`awaiting-wallet` → `pending` → `confirmed` / `rejected-by-user` / `failed`) with automatic data refresh after block confirmation.
+- **Official Notarization Certificate (`/documents/:id/certificate`)**:
+  - Dedicated attestation certificate displaying document metadata, SHA-256 cryptographic digest, attesting notary wallet, on-chain block timestamp, transaction hash, block number, and smart contract address.
+  - Status guard: renders friendly prompt with return link if the document is not yet notarized.
+  - Formal disclaimer footer: "Technical integrity proof of this document's SHA-256 hash. Not a substitute for legally recognized notarization."
+  - Print optimization: dedicated print stylesheet hiding navbar, sidebar, and controls, enabling clean single-page printing via `window.print()`.
+  - "View Certificate" action button integrated into `DocumentDetailPage` for all `NOTARIZED` documents.
+
+#### Sprint 5B Verification & Admin Demo Steps
+
+##### Demo 1: Public Document Verification (`/verify`)
+1. Open `http://localhost:5173/verify` in any browser (no authentication required).
+2. Drag and drop the original PDF file that was previously notarized.
+3. Click **Verify File**.
+4. Observe the green **VERIFIED** panel showing the authentic SHA-256 digest, attesting notary wallet, block timestamp, transaction hash, block number, and contract address.
+5. Click **Verify another file**.
+6. Select any modified or un-notarized PDF file and click **Verify File**.
+7. Observe the red **TAMPERED / VERIFICATION FAILED** panel showing the computed digest with the explanation that no matching record exists.
+
+##### Demo 2: Admin Dashboard & On-Chain Notary Management (`/admin/dashboard`, `/admin/notaries`)
+1. Log in with an administrator account (or use `admin@gohash.io`).
+2. Navigate to `/admin/dashboard` and verify stat cards and recent notarization activity.
+3. Navigate to `/admin/notaries`.
+4. Locate a regular user with a linked wallet address, click **Change Role**, and promote them to `NOTARY`.
+5. Notice the on-chain badge reads **Not authorized** because on-chain registration is distinct from off-chain roles.
+6. Connect MetaMask using Account #0 (the contract deployer account: `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266`).
+7. Click **Authorize On-Chain** next to the notary.
+8. Confirm the transaction in MetaMask.
+9. Once confirmed, observe the badge update to green **Authorized** with data read directly from the blockchain.
+10. Click **Revoke On-Chain**, approve the transaction, and observe the badge update back to **Not authorized**.
+
+##### Demo 3: Notarization Certificate Export (`/documents/:id/certificate`)
+1. Log in as the owner of a `NOTARIZED` document and open `/documents/:id`.
+2. Click the new **View Certificate** button in the action bar.
+3. Review the certificate layout showing the document name, ID, SHA-256 digest, notary wallet, block timestamp, transaction hash, and disclaimer.
+4. Click **Print / Save as PDF**.
+5. Observe in the print preview dialog that the top navbar, sidebar, buttons, and app layout controls are cleanly hidden, presenting a clean certificate suitable for archiving.
