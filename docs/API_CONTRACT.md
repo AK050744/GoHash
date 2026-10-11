@@ -64,6 +64,7 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 | `POST` | `/api/notarization/:id/approve` | JWT (NOTARY) | Validate preconditions and prepare on-chain notarize call | **IMPLEMENTED** |
 | `POST` | `/api/notarization/:id/reject` | JWT (NOTARY) | Reject notarization with reason | **IMPLEMENTED** |
 | `POST` | `/api/notarization/:id/confirm` | JWT (NOTARY) | Verify on-chain transaction receipt & confirm notarization | **IMPLEMENTED** |
+| `GET` | `/api/blockchain/contract` | JWT (ADMIN) | Smart contract address, chainId, and full ABI for wallet operations | **IMPLEMENTED** |
 | `GET` | `/api/blockchain/:documentId` | JWT | Retrieve stored and on-chain notarization receipt | **IMPLEMENTED** |
 | `POST` | `/api/verify` | Public | Verify PDF document against blockchain without storing file | **IMPLEMENTED** |
 | `GET` | `/api/admin/users` | JWT (ADMIN) | List users with optional role and name/email query | **IMPLEMENTED** |
@@ -615,6 +616,33 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 ---
 
 ### 5. Verification & Blockchain
+
+#### `GET /api/blockchain/contract`
+- **Auth**: Bearer JWT (`ADMIN` only; USER and NOTARY get `403 FORBIDDEN`, unauthenticated callers get `401 UNAUTHORIZED`)
+- **Status**: `IMPLEMENTED`
+- **Purpose**: Returns the deployed smart contract address, network chainId, and full ABI (including administrative write functions such as `addNotary` and `removeNotary`). Used by the admin frontend to construct on-chain admin transactions via the user's connected wallet (e.g., MetaMask).
+- **Security**: The backend **never holds a private key or signer**. This endpoint is strictly read-only and returns contract metadata.
+- **Success (200)**:
+```json
+{
+  "success": true,
+  "contractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "chainId": 31337,
+  "abi": [
+    "function getDocument(bytes32 documentHash) external view returns (bytes32, string, address, address, uint256)",
+    "function exists(bytes32 documentHash) external view returns (bool)",
+    "function isNotary(address notary) external view returns (bool)",
+    "function notarize(bytes32 documentHash, string ipfsCid) external",
+    "function addNotary(address notary) external",
+    "function removeNotary(address notary) external"
+  ]
+}
+```
+- **Error Responses**:
+  - `401 Unauthorized` (`UNAUTHORIZED`): Missing or invalid JWT bearer token.
+  - `403 Forbidden` (`FORBIDDEN`): User does not have `ADMIN` role.
+  - `503 Service Unavailable` (`CONTRACT_NOT_DEPLOYED`): Smart contract deployment JSON file is missing or invalid.
+  - `503 Service Unavailable` (`CHAIN_UNREACHABLE`): RPC blockchain node is not responding or unreachable.
 
 #### `GET /api/blockchain/:documentId`
 - **Auth**: Bearer JWT (`owner`, `NOTARY`, or `ADMIN`; others `404 NOT_FOUND` so existence is not leaked)

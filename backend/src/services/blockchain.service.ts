@@ -80,6 +80,19 @@ export class BlockchainService {
   }
 
   /**
+   * Asserts that the blockchain RPC provider is reachable.
+   * Throws 503 CHAIN_UNREACHABLE on connectivity errors.
+   */
+  static async assertChainReachable(): Promise<void> {
+    try {
+      await getProvider().getBlockNumber()
+    } catch (err: unknown) {
+      BlockchainService._rethrowInfraError(err)
+      throw err
+    }
+  }
+
+  /**
    * Query on-chain record for a document hash.
    * Returns { exists: false } if the document is not notarized.
    * Never reverts on "not found".

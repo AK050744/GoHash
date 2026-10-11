@@ -6,6 +6,29 @@ import { sendSuccess } from '../utils/response'
 import { Notarization } from '../models/Notarization'
 import { DocumentModel } from '../models/Document'
 import { BlockchainService } from '../services/blockchain.service'
+import { FULL_NOTARY_ABI } from '../config/blockchain'
+
+/**
+ * GET /api/blockchain/contract (ADMIN only)
+ * Returns the deployed contract address, chainId, and full ABI.
+ * Used by the admin frontend to construct addNotary/removeNotary calls via MetaMask.
+ *
+ * SECURITY: The backend NEVER holds a private key or signer.
+ * This endpoint only exposes read-only deployment metadata.
+ */
+export const getContractMeta = asyncHandler(async (_req: Request, res: Response) => {
+  // getContractInfo() throws 503 CONTRACT_NOT_DEPLOYED if the deployment file is missing
+  const info = BlockchainService.getContractInfo()
+
+  // assertChainReachable() throws 503 CHAIN_UNREACHABLE if the node cannot be reached
+  await BlockchainService.assertChainReachable()
+
+  sendSuccess(res, {
+    contractAddress: info.address,
+    chainId:         info.chainId,
+    abi:             FULL_NOTARY_ABI,
+  }, 200)
+})
 
 /**
  * GET /api/blockchain/:documentId (owner, NOTARY, ADMIN; others 404)

@@ -15,7 +15,7 @@ const router = Router()
 
 const verifyLimiter = rateLimit({
   windowMs: 60 * 1000,                        // 1 minute window
-  max:      env.VERIFY_RATE_LIMIT_PER_MIN,    // configurable per-minute limit
+  max:             () => env.VERIFY_RATE_LIMIT_PER_MIN, // dynamically reads env var so tests can override
   standardHeaders: true,
   legacyHeaders:   false,
   message: {
