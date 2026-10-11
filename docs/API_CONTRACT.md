@@ -65,7 +65,13 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 | `POST` | `/api/notarization/:id/reject` | JWT (NOTARY) | Reject notarization with reason | **IMPLEMENTED** |
 | `POST` | `/api/notarization/:id/confirm` | JWT (NOTARY) | Verify on-chain transaction receipt & confirm notarization | **IMPLEMENTED** |
 | `GET` | `/api/blockchain/:documentId` | JWT | Retrieve stored and on-chain notarization receipt | **IMPLEMENTED** |
-| `POST` | `/api/verify` | Public | Verify SHA-256 hash or document against blockchain | PLANNED (Sprint 5A) |
+| `POST` | `/api/verify` | Public | Verify PDF document against blockchain without storing file | **IMPLEMENTED** |
+| `GET` | `/api/admin/users` | JWT (ADMIN) | List users with optional role and name/email query | **IMPLEMENTED** |
+| `PATCH` | `/api/admin/users/:id/role` | JWT (ADMIN) | Change user role (USER, NOTARY, ADMIN) | **IMPLEMENTED** |
+| `PATCH` | `/api/admin/users/:id/status` | JWT (ADMIN) | Enable or disable user account (immediate JWT invalidation) | **IMPLEMENTED** |
+| `GET` | `/api/admin/notaries` | JWT (ADMIN) | List NOTARY users with live on-chain authorization status | **IMPLEMENTED** |
+| `GET` | `/api/admin/activity` | JWT (ADMIN) | List latest 50 notarization activities (newest first) | **IMPLEMENTED** |
+| `GET` | `/api/admin/stats` | JWT (ADMIN) | Aggregate system-wide counts and statistics | **IMPLEMENTED** |
 
 ---
 
@@ -654,5 +660,274 @@ All UI copy, API responses, error messages, code comments, and documentation mus
   - `404 Not Found` (`NOT_FOUND`): Document does not exist or caller is unauthorized.
 
 #### `POST /api/verify`
-- **Auth**: None
-- **Status**: `PLANNED - Sprint 5A` (Returns HTTP 501 `NOT_IMPLEMENTED`)
+- **Auth**: None (Public endpoint; rate-limited per IP)
+- **Status**: `IMPLEMENTED`
+- **Content-Type**: `multipart/form-data`
+- **Rate Limit**: Default 60 requests/minute per IP (`VERIFY_RATE_LIMIT_PER_MIN`), returns HTTP 429 `RATE_LIMITED` when exceeded.
+- **Request Parameters**:
+  - `file`: PDF file to verify (binary, required in multipart field `file`).
+- **Processing Rules**:
+  - Validates file presence, MIME type (`application/pdf`), and `%PDF-` binary magic bytes.
+  - Enforces size limit (`MAX_FILE_SIZE_MB`, default 10 MB).
+  - Computes SHA-256 hash in memory. **The file is never stored to disk or database.**
+  - Looks up the hash on-chain via the read-only JSON-RPC provider calling `DocumentNotary.getRecord(bytes32)`.
+  - Authoritative source is on-chain data: `ownerWallet`, `notaryWallet`, and on-chain `timestamp`.
+  - The on-chain `timestamp` indicates that the hash was **recorded no later than this time**.
+  - If found on-chain, queries database for extra metadata (`transactionHash`, `blockNumber`, and document metadata: `id`, `originalName`). If database record is missing, returns on-chain record without MongoDB extras.
+  - Privacy guarantee: Owner name, email, or any private user details are **never returned**.
+- **Success - Record Found (200)**:
+```json
+{
+  "success": true,
+  "status": "VERIFIED",
+  "hash": "a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0",
+  "record": {
+    "ownerWallet": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+    "notaryWallet": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+    "timestamp": 1728472500,
+    "contractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "transactionHash": "0x4f8a123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "blockNumber": 14
+  },
+  "document": {
+    "id": "67039a8c1719b2241cfb5678",
+    "originalName": "contract.pdf"
+  }
+}
+```
+- **Success - Record Not Found (200)**:
+```json
+{
+  "success": true,
+  "status": "NOT_VERIFIED",
+  "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "message": "No notarization record matches this file's hash."
+}
+```
+> Note: `NOT_VERIFIED` means the file differs from every notarized record (e.g. modified after notarization, or never notarized).
+- **Error Responses**:
+  - `400 Bad Request` (`INVALID_FILE`): Missing file or file does not have `%PDF-` header / `application/pdf` MIME type.
+  - `400 Bad Request` (`FILE_TOO_LARGE`): File exceeds configured `MAX_FILE_SIZE_MB`.
+  - `429 Too Many Requests` (`RATE_LIMITED`): Exceeded per-minute rate limit.
+  - `503 Service Unavailable` (`CHAIN_UNREACHABLE`): Blockchain RPC provider unreachable.
+  - `503 Service Unavailable` (`CONTRACT_NOT_DEPLOYED`): DocumentNotary contract not deployed at configured address.
+
+---
+
+### 6. Admin Management
+
+All endpoints under `/api/admin` require valid JWT authentication with the `ADMIN` role (`requireAuth`, `requireRole('ADMIN')`).
+
+> **Security Invariants**:
+> - Password hashes, salt values, and wallet nonces are **never exposed** in any response.
+> - The backend **never holds a private key**. Changing a user's role to `NOTARY` in the database does **not** authorize them on-chain; on-chain notary authorization must be performed by the contract owner via MetaMask / Hardhat.
+> - An administrator cannot change their own role or deactivate their own account (`409 CANNOT_MODIFY_SELF`).
+> - Account deactivation immediately invalidates the user's sessions on subsequent requests.
+
+#### `GET /api/admin/users`
+- **Auth**: Bearer JWT (`ADMIN`)
+- **Status**: `IMPLEMENTED`
+- **Purpose**: List system users with optional role filtering, search query, and pagination limit.
+- **Query Parameters**:
+  - `role` (optional): Filter by role (`USER`, `NOTARY`, or `ADMIN`).
+  - `q` (optional): Case-insensitive text search across `name` and `email`.
+  - `limit` (optional): Maximum records returned (default `50`, maximum `100`).
+- **Success (200)**:
+```json
+{
+  "success": true,
+  "users": [
+    {
+      "id": "67039a8c1719b2241cfb1234",
+      "name": "Alice User",
+      "email": "alice@example.com",
+      "role": "USER",
+      "walletAddress": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+      "isActive": true,
+      "createdAt": "2026-10-07T10:15:30.000Z",
+      "updatedAt": "2026-10-07T10:15:30.000Z"
+    }
+  ],
+  "total": 1
+}
+```
+- **Error Responses**:
+  - `401 Unauthorized` (`UNAUTHORIZED`): Missing or invalid token.
+  - `403 Forbidden` (`FORBIDDEN`): Caller does not have `ADMIN` role.
+
+#### `PATCH /api/admin/users/:id/role`
+- **Auth**: Bearer JWT (`ADMIN`)
+- **Status**: `IMPLEMENTED`
+- **Purpose**: Update a user's role in the database.
+- **Request Body**:
+```json
+{
+  "role": "NOTARY"
+}
+```
+- **Validation Rules**:
+  - `role` must be one of `USER`, `NOTARY`, or `ADMIN`.
+  - An administrator cannot modify their own role.
+- **Success (200)**:
+```json
+{
+  "success": true,
+  "user": {
+    "id": "67039a8c1719b2241cfb1234",
+    "name": "Bob Smith",
+    "email": "bob@example.com",
+    "role": "NOTARY",
+    "walletAddress": null,
+    "isActive": true,
+    "createdAt": "2026-10-07T10:15:30.000Z",
+    "updatedAt": "2026-10-07T11:00:00.000Z"
+  }
+}
+```
+- **Error Responses**:
+  - `400 Bad Request` (`VALIDATION_ERROR`): Invalid role supplied.
+  - `401 Unauthorized` (`UNAUTHORIZED`): Missing or invalid token.
+  - `403 Forbidden` (`FORBIDDEN`): Caller does not have `ADMIN` role.
+  - `404 Not Found` (`NOT_FOUND`): User ID not found.
+  - `409 Conflict` (`CANNOT_MODIFY_SELF`): Administrator attempted to modify their own role.
+
+#### `PATCH /api/admin/users/:id/status`
+- **Auth**: Bearer JWT (`ADMIN`)
+- **Status**: `IMPLEMENTED`
+- **Purpose**: Enable or disable a user account.
+- **Request Body**:
+```json
+{
+  "isActive": false
+}
+```
+- **Validation Rules**:
+  - `isActive` must be a boolean.
+  - An administrator cannot disable their own account.
+  - Disabling immediately blocks subsequent authenticated requests by the user (`requireAuth` rejects with `403 ACCOUNT_DISABLED`).
+- **Success (200)**:
+```json
+{
+  "success": true,
+  "user": {
+    "id": "67039a8c1719b2241cfb1234",
+    "name": "Bob Smith",
+    "email": "bob@example.com",
+    "role": "NOTARY",
+    "walletAddress": null,
+    "isActive": false,
+    "createdAt": "2026-10-07T10:15:30.000Z",
+    "updatedAt": "2026-10-07T11:05:00.000Z"
+  }
+}
+```
+- **Error Responses**:
+  - `400 Bad Request` (`VALIDATION_ERROR`): `isActive` is not a boolean.
+  - `401 Unauthorized` (`UNAUTHORIZED`): Missing or invalid token.
+  - `403 Forbidden` (`FORBIDDEN`): Caller does not have `ADMIN` role.
+  - `404 Not Found` (`NOT_FOUND`): User ID not found.
+  - `409 Conflict` (`CANNOT_MODIFY_SELF`): Administrator attempted to modify their own active status.
+
+#### `GET /api/admin/notaries`
+- **Auth**: Bearer JWT (`ADMIN`)
+- **Status**: `IMPLEMENTED`
+- **Purpose**: List all users with role `NOTARY` along with their live on-chain authorization status checked via read-only provider.
+- **Success (200)**:
+```json
+{
+  "success": true,
+  "notaries": [
+    {
+      "id": "67039a8c1719b2241cfb5555",
+      "name": "Authorized Notary",
+      "email": "notary@example.com",
+      "role": "NOTARY",
+      "walletAddress": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      "isActive": true,
+      "createdAt": "2026-10-07T10:15:30.000Z",
+      "updatedAt": "2026-10-07T10:15:30.000Z",
+      "linkedWallet": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      "onChainAuthorized": true
+    }
+  ],
+  "chainAvailable": true
+}
+```
+> Note: If the blockchain RPC provider is unreachable, returns `chainAvailable: false` with `onChainAuthorized: null` for each notary instead of throwing an error.
+- **Error Responses**:
+  - `401 Unauthorized` (`UNAUTHORIZED`): Missing or invalid token.
+  - `403 Forbidden` (`FORBIDDEN`): Caller does not have `ADMIN` role.
+
+#### `GET /api/admin/activity`
+- **Auth**: Bearer JWT (`ADMIN`)
+- **Status**: `IMPLEMENTED`
+- **Purpose**: Retrieve the latest 50 notarization activities across the system, ordered newest first.
+- **Privacy Rule**: Requester email, password hashes, and sensitive user details are strictly omitted; only requester name and document original filename are displayed.
+- **Success (200)**:
+```json
+{
+  "success": true,
+  "activity": [
+    {
+      "id": "67039a8c1719b2241cfb9999",
+      "status": "CONFIRMED",
+      "documentName": "Partnership_Agreement.pdf",
+      "requesterName": "Alice Client",
+      "notaryWallet": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      "transactionHash": "0x4f8a123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "blockNumber": 14,
+      "createdAt": "2026-10-07T10:15:30.000Z",
+      "updatedAt": "2026-10-07T10:20:00.000Z"
+    }
+  ]
+}
+```
+- **Error Responses**:
+  - `401 Unauthorized` (`UNAUTHORIZED`): Missing or invalid token.
+  - `403 Forbidden` (`FORBIDDEN`): Caller does not have `ADMIN` role.
+
+#### `GET /api/admin/stats`
+- **Auth**: Bearer JWT (`ADMIN`)
+- **Status**: `IMPLEMENTED`
+- **Purpose**: Retrieve aggregate system statistics including user counts by role, notaries with wallets, and document/notarization counts grouped by status.
+- **Success (200)**:
+```json
+{
+  "success": true,
+  "users": {
+    "total": 12,
+    "byRole": {
+      "USER": 9,
+      "NOTARY": 2,
+      "ADMIN": 1
+    }
+  },
+  "notaries": {
+    "total": 2,
+    "withWallet": 1
+  },
+  "documents": {
+    "total": 8,
+    "byStatus": {
+      "PENDING": 2,
+      "APPROVED": 1,
+      "REJECTED": 1,
+      "NOTARIZED": 4
+    }
+  },
+  "notarizations": {
+    "total": 8,
+    "byStatus": {
+      "REQUESTED": 1,
+      "APPROVED": 1,
+      "REJECTED": 1,
+      "CONFIRMED": 4,
+      "FAILED": 1
+    }
+  }
+}
+```
+- **Error Responses**:
+  - `401 Unauthorized` (`UNAUTHORIZED`): Missing or invalid token.
+  - `403 Forbidden` (`FORBIDDEN`): Caller does not have `ADMIN` role.
+
