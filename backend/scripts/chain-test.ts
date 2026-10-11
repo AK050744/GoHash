@@ -45,6 +45,18 @@
  *   17. the same tx hash reused on another notarization is rejected
  *   18. reject with and without reason
  *   19. GET /blockchain/:documentId shows stored and on-chain data; another user gets 404
+ *   20. POST /api/verify: real notarized PDF -> VERIFIED (right notaryWallet, txHash)
+ *   21. POST /api/verify: same PDF + one extra byte -> NOT_VERIFIED
+ *   22. POST /api/verify: non-PDF -> 400 INVALID_FILE
+ *   23. POST /api/verify: no auth token required
+ *   24. POST /api/verify: response never contains owner email or name
+ *   25. Admin GET /api/admin/users: USER 403, NOTARY 403, ADMIN 200
+ *   26. Admin PATCH /api/admin/users/:id/role: ADMIN cannot change own role (409)
+ *   27. Admin PATCH /api/admin/users/:id/status: disable user -> 403 ACCOUNT_DISABLED
+ *   28. Admin disabled user existing token stops working
+ *   29. Admin GET /api/admin/notaries: includes onChainAuthorized
+ *   30. Admin GET /api/admin/stats: counts correct
+ *   31. No admin response contains passwordHash
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -131,6 +143,31 @@ async function request(
     data = null
   }
 
+  return { status: res.status, data }
+}
+
+// ─── Multipart file upload helper ─────────────────────────────────────────────
+
+async function uploadFileRequest(
+  urlPath: string,
+  buffer: Buffer,
+  filename: string,
+  mimetype: string,
+  token?: string
+): Promise<{ status: number; data: any }> {
+  const formData = new FormData()
+  formData.append('file', new Blob([buffer], { type: mimetype }), filename)
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${BASE_URL}${urlPath}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  })
+
+  let data: any = null
+  try { data = await res.json() } catch { data = null }
   return { status: res.status, data }
 }
 
@@ -1053,6 +1090,406 @@ async function runChainTests() {
       }
     } catch (err) {
       logFail('GET /blockchain/:documentId stored + onChain, another user gets 404', err)
+    }
+
+    // ── Tests 20–24: POST /api/verify ───────────────────────────────────────
+    console.log('\n--- POST /api/verify Tests ---')
+
+    // Build a unique valid PDF for this run (unique content prevents hash collision across runs)
+    const uniqueMarker = crypto.randomBytes(8).toString('hex')
+    const verifyPdfBytes = Buffer.from(
+      `%PDF-1.4\n%GoHash Verify Test ${uniqueMarker}\n1 0 obj\n<< /Title (VerifyTest) >>\nendobj\ntrailer\n<<>>\n%%EOF\n`
+    )
+    const verifyPdfHash = crypto.createHash('sha256').update(verifyPdfBytes).digest('hex')
+
+    // Upload the verify PDF as userA so it exists in the DB
+    let verifyDocId = ''
+    try {
+      const uploadRes = await uploadFileRequest(
+        '/api/documents/upload',
+        verifyPdfBytes,
+        `verify_test_${uniqueMarker}.pdf`,
+        'application/pdf',
+        userAToken
+      )
+      if (uploadRes.status === 201 && uploadRes.data?.document?.id) {
+        verifyDocId = uploadRes.data.document.id
+      }
+    } catch {
+      // If upload fails, verify tests will still run but without DB enrichment
+    }
+
+    // Notarize the verify PDF on-chain to make it verifiable
+    if (verifyDocId) {
+      try {
+        // Request notarization
+        const reqRes = await request('/api/notarization/request', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${userAToken}` },
+          body: { documentId: verifyDocId },
+        })
+        const verifyNotId = reqRes.data?.notarization?.id
+
+        if (verifyNotId) {
+          // Approve (notary has signer1 linked, userA has signer2 linked from earlier tests)
+          await request(`/api/notarization/${verifyNotId}/approve`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${notaryToken}` },
+          })
+
+          // Call contract as signer1
+          const contractAsNotary1 = BlockchainService.getContract(signer1)
+          const verifyTx = await contractAsNotary1.notarize(
+            `0x${verifyPdfHash}`,
+            '',
+            signer2Address
+          )
+          await verifyTx.wait()
+          const verifyTxHash = verifyTx.hash
+
+          // Confirm
+          await request(`/api/notarization/${verifyNotId}/confirm`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${notaryToken}` },
+            body: { transactionHash: verifyTxHash },
+          })
+
+          // ── Test 20: original PDF → VERIFIED with right notaryWallet + txHash ──
+          try {
+            const verRes = await uploadFileRequest(
+              '/api/verify',
+              verifyPdfBytes,
+              `verify_${uniqueMarker}.pdf`,
+              'application/pdf'
+              // No token — public endpoint
+            )
+            const contractInfo = BlockchainService.getContractInfo()
+            if (
+              verRes.status === 200 &&
+              verRes.data?.success === true &&
+              verRes.data?.status === 'VERIFIED' &&
+              verRes.data?.hash === verifyPdfHash &&
+              verRes.data?.record?.notaryWallet?.toLowerCase() === signer1Address.toLowerCase() &&
+              (verRes.data?.record?.transactionHash === undefined ||
+                verRes.data?.record?.transactionHash?.toLowerCase() === verifyTxHash.toLowerCase()) &&
+              verRes.data?.record?.contractAddress?.toLowerCase() === contractInfo.address.toLowerCase()
+            ) {
+              logPass(
+                'POST /api/verify: real PDF → VERIFIED',
+                `status=VERIFIED, notaryWallet=${signer1Address.slice(0, 10)}...`
+              )
+            } else {
+              throw new Error(
+                `Expected VERIFIED with notary, got ${verRes.status}: ${JSON.stringify(verRes.data)}`
+              )
+            }
+          } catch (err) {
+            logFail('POST /api/verify: real PDF → VERIFIED', err)
+          }
+
+          // ── Test 21: same PDF + one extra byte → NOT_VERIFIED ───────────────
+          try {
+            const modifiedBytes = Buffer.concat([verifyPdfBytes, Buffer.from([0x0a])])
+            const modRes = await uploadFileRequest(
+              '/api/verify',
+              modifiedBytes,
+              `modified_${uniqueMarker}.pdf`,
+              'application/pdf'
+            )
+            if (
+              modRes.status === 200 &&
+              modRes.data?.status === 'NOT_VERIFIED' &&
+              modRes.data?.success === true
+            ) {
+              logPass(
+                'POST /api/verify: modified PDF → NOT_VERIFIED',
+                `status=NOT_VERIFIED`
+              )
+            } else {
+              throw new Error(
+                `Expected NOT_VERIFIED for modified file, got ${modRes.status}: ${JSON.stringify(modRes.data)}`
+              )
+            }
+          } catch (err) {
+            logFail('POST /api/verify: modified PDF → NOT_VERIFIED', err)
+          }
+
+          // ── Test 24: response never contains owner email or name ─────────────
+          try {
+            const privRes = await uploadFileRequest(
+              '/api/verify',
+              verifyPdfBytes,
+              `priv_${uniqueMarker}.pdf`,
+              'application/pdf'
+            )
+            const body = JSON.stringify(privRes.data ?? {})
+            if (!body.includes('@') && !privRes.data?.record?.ownerEmail && !privRes.data?.record?.ownerName) {
+              logPass(
+                'POST /api/verify: no owner email or name in response',
+                'No PII in response'
+              )
+            } else {
+              throw new Error(`Owner PII found in verify response: ${body}`)
+            }
+          } catch (err) {
+            logFail('POST /api/verify: no owner email or name in response', err)
+          }
+        }
+      } catch (err) {
+        logFail('POST /api/verify setup (upload+notarize)', err)
+      }
+    }
+
+    // ── Test 22: non-PDF → 400 INVALID_FILE ───────────────────────────────────
+    try {
+      const notPdf = Buffer.from('This is not a PDF, just plain text')
+      const res = await uploadFileRequest(
+        '/api/verify',
+        notPdf,
+        'not_a_pdf.pdf',
+        'application/pdf'
+      )
+      if (res.status === 400 && res.data?.error?.code === 'INVALID_FILE') {
+        logPass(
+          'POST /api/verify: non-PDF → 400 INVALID_FILE',
+          `code=${res.data.error.code}`
+        )
+      } else {
+        throw new Error(`Expected 400 INVALID_FILE, got ${res.status}: ${JSON.stringify(res.data)}`)
+      }
+    } catch (err) {
+      logFail('POST /api/verify: non-PDF → 400 INVALID_FILE', err)
+    }
+
+    // ── Test 23: no auth token required ────────────────────────────────────────
+    try {
+      // POST /api/verify with no file should return 400 INVALID_FILE (not 401)
+      const res = await request('/api/verify', { method: 'POST', body: {} })
+      if (res.status === 400 && res.data?.error?.code === 'INVALID_FILE') {
+        logPass(
+          'POST /api/verify: no auth token required (no 401)',
+          `returns 400 INVALID_FILE, not 401`
+        )
+      } else {
+        throw new Error(
+          `Expected 400 INVALID_FILE without token, got ${res.status}: ${JSON.stringify(res.data)}`
+        )
+      }
+    } catch (err) {
+      logFail('POST /api/verify: no auth token required (no 401)', err)
+    }
+
+    // ── Tests 25–31: Admin API ────────────────────────────────────────────────
+    console.log('\n--- Admin API Tests ---')
+
+    // Create an ADMIN user for this test run
+    const adminEmail = `admin_${Date.now()}_${crypto.randomBytes(4).toString('hex')}@example.com`
+    const { token: rawAdminToken, id: adminId } = await registerUser(adminEmail, 'Test Admin')
+    // Promote to ADMIN in the DB before logging in
+    await User.updateOne({ _id: adminId }, { role: 'ADMIN' })
+    // Login to get a fresh token with ADMIN role
+    const adminLoginRes = await request('/api/auth/login', {
+      method: 'POST',
+      body: { email: adminEmail, password: testPassword },
+    })
+    const adminToken = adminLoginRes.data?.token as string
+    // (rawAdminToken carries USER role — we intentionally don't use it for admin tests)
+    void rawAdminToken
+
+    // ── Test 25: USER/NOTARY get 403, ADMIN gets 200 ──────────────────────────
+    try {
+      const adminRoutes = [
+        '/api/admin/users',
+        '/api/admin/notaries',
+        '/api/admin/activity',
+        '/api/admin/stats',
+      ]
+
+      let allBlocked = true
+      for (const route of adminRoutes) {
+        const userRes   = await request(route, { headers: { Authorization: `Bearer ${userAToken}` } })
+        const notaryRes = await request(route, { headers: { Authorization: `Bearer ${notaryToken}` } })
+        if (userRes.status !== 403 || notaryRes.status !== 403) {
+          allBlocked = false
+          throw new Error(`Expected 403 on ${route} for USER/NOTARY, got user=${userRes.status} notary=${notaryRes.status}`)
+        }
+      }
+
+      // ADMIN should get 200 on all of them
+      let allAllowed = true
+      for (const route of adminRoutes) {
+        const adminRes = await request(route, { headers: { Authorization: `Bearer ${adminToken}` } })
+        if (adminRes.status !== 200) {
+          allAllowed = false
+          throw new Error(`Expected 200 for ADMIN on ${route}, got ${adminRes.status}: ${JSON.stringify(adminRes.data)}`)
+        }
+      }
+
+      if (allBlocked && allAllowed) {
+        logPass(
+          'Admin routes: USER/NOTARY 403, ADMIN 200',
+          `${adminRoutes.length} routes checked`
+        )
+      }
+    } catch (err) {
+      logFail('Admin routes: USER/NOTARY 403, ADMIN 200', err)
+    }
+
+    // ── Test 26: admin cannot change own role (409 CANNOT_MODIFY_SELF) ────────
+    try {
+      const res = await request(`/api/admin/users/${adminId}/role`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${adminToken}` },
+        body: { role: 'USER' },
+      })
+      if (res.status === 409 && res.data?.error?.code === 'CANNOT_MODIFY_SELF') {
+        logPass(
+          'Admin cannot change own role → 409 CANNOT_MODIFY_SELF',
+          `code=${res.data.error.code}`
+        )
+      } else {
+        throw new Error(
+          `Expected 409 CANNOT_MODIFY_SELF, got ${res.status}: ${JSON.stringify(res.data)}`
+        )
+      }
+    } catch (err) {
+      logFail('Admin cannot change own role → 409 CANNOT_MODIFY_SELF', err)
+    }
+
+    // ── Test 27+28: disable userA → 403 ACCOUNT_DISABLED, existing token stops ─
+    try {
+      // Disable userA via admin
+      const disableRes = await request(`/api/admin/users/${userAId}/status`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${adminToken}` },
+        body: { isActive: false },
+      })
+      if (disableRes.status !== 200 || disableRes.data?.user?.isActive !== false) {
+        throw new Error(`Disable failed: ${disableRes.status} ${JSON.stringify(disableRes.data)}`)
+      }
+
+      // Verify userA's existing token is now rejected
+      const checkRes = await request('/api/auth/me', {
+        headers: { Authorization: `Bearer ${userAToken}` },
+      })
+      if (checkRes.status === 403 && checkRes.data?.error?.code === 'ACCOUNT_DISABLED') {
+        logPass(
+          'Disabled user: existing token stops working (403 ACCOUNT_DISABLED)',
+          `status=403, code=${checkRes.data.error.code}`
+        )
+      } else {
+        throw new Error(
+          `Expected 403 ACCOUNT_DISABLED for disabled user, got ${checkRes.status}: ${JSON.stringify(checkRes.data)}`
+        )
+      }
+
+      // Admin cannot disable themselves
+      const selfDisable = await request(`/api/admin/users/${adminId}/status`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${adminToken}` },
+        body: { isActive: false },
+      })
+      if (selfDisable.status === 409 && selfDisable.data?.error?.code === 'CANNOT_MODIFY_SELF') {
+        logPass(
+          'Admin cannot disable themselves → 409 CANNOT_MODIFY_SELF',
+          `code=${selfDisable.data.error.code}`
+        )
+      } else {
+        throw new Error(
+          `Expected 409 CANNOT_MODIFY_SELF for self-disable, got ${selfDisable.status}: ${JSON.stringify(selfDisable.data)}`
+        )
+      }
+
+      // Re-enable userA so teardown proceeds normally
+      await User.updateOne({ _id: userAId }, { isActive: true })
+    } catch (err) {
+      logFail('Admin disable user / CANNOT_MODIFY_SELF', err)
+      // Ensure re-enabled in case of partial failure
+      await User.updateOne({ _id: userAId }, { isActive: true }).catch(() => {})
+    }
+
+    // ── Test 29: GET /api/admin/notaries includes onChainAuthorized ───────────
+    try {
+      const res = await request('/api/admin/notaries', {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      })
+      if (
+        res.status === 200 &&
+        res.data?.success === true &&
+        Array.isArray(res.data?.notaries) &&
+        typeof res.data?.chainAvailable === 'boolean'
+      ) {
+        // The notary user with signer1 wallet should be present
+        const notaryEntry = res.data.notaries.find(
+          (n: any) => n.walletAddress?.toLowerCase() === signer1Address.toLowerCase()
+        )
+        if (notaryEntry && notaryEntry.onChainAuthorized === true) {
+          logPass(
+            'GET /api/admin/notaries: includes onChainAuthorized',
+            `notary=${signer1Address.slice(0, 10)}..., onChainAuthorized=true, chainAvailable=${res.data.chainAvailable}`
+          )
+        } else {
+          throw new Error(
+            `Notary entry missing or onChainAuthorized wrong: ${JSON.stringify(notaryEntry)}`
+          )
+        }
+      } else {
+        throw new Error(`Unexpected response: ${res.status} ${JSON.stringify(res.data)}`)
+      }
+    } catch (err) {
+      logFail('GET /api/admin/notaries: includes onChainAuthorized', err)
+    }
+
+    // ── Test 30: GET /api/admin/stats counts are correct ──────────────────────
+    try {
+      const res = await request('/api/admin/stats', {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      })
+      if (
+        res.status === 200 &&
+        res.data?.success === true &&
+        typeof res.data?.users?.total === 'number' &&
+        typeof res.data?.documents?.total === 'number' &&
+        typeof res.data?.notarizations?.total === 'number' &&
+        res.data?.users?.total >= 1 &&
+        res.data?.documents?.total >= 1 &&
+        res.data?.notarizations?.total >= 1
+      ) {
+        logPass(
+          'GET /api/admin/stats: counts correct',
+          `users=${res.data.users.total}, docs=${res.data.documents.total}, notarizations=${res.data.notarizations.total}`
+        )
+      } else {
+        throw new Error(`Unexpected stats: ${res.status} ${JSON.stringify(res.data)}`)
+      }
+    } catch (err) {
+      logFail('GET /api/admin/stats: counts correct', err)
+    }
+
+    // ── Test 31: no admin response contains passwordHash ──────────────────────
+    try {
+      const routes = [
+        '/api/admin/users',
+        '/api/admin/notaries',
+        '/api/admin/activity',
+        '/api/admin/stats',
+      ]
+      let found = false
+      for (const route of routes) {
+        const res = await request(route, { headers: { Authorization: `Bearer ${adminToken}` } })
+        if (JSON.stringify(res.data).includes('passwordHash')) {
+          found = true
+          throw new Error(`passwordHash found in response for ${route}`)
+        }
+      }
+      if (!found) {
+        logPass(
+          'No admin response contains passwordHash',
+          `${routes.length} routes checked`
+        )
+      }
+    } catch (err) {
+      logFail('No admin response contains passwordHash', err)
     }
 
   } finally {

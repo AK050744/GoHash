@@ -28,6 +28,9 @@ const envSchema = z.object({
   CHAIN_ID: z.coerce.number().int().positive().default(31337),
   // Path to blockchain/deployments/localhost.json written by the deploy script
   DEPLOYMENT_FILE: z.string().default('../blockchain/deployments/localhost.json'),
+
+  // Rate limiting for public verify endpoint (requests per minute per IP)
+  VERIFY_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(30),
 })
 
 const parseResult = envSchema.safeParse({

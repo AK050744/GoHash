@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { env } from '../config/env'
-import { UserRole } from '../models/User'
+import { User, UserRole } from '../models/User'
 import { sendError } from '../utils/response'
 
 export interface JwtAuthPayload {
@@ -12,6 +12,9 @@ export interface JwtAuthPayload {
 /**
  * Require valid JWT Bearer token in Authorization header.
  * Populates req.user, req.userId, and req.userRole.
+ *
+ * Immediately returns 403 ACCOUNT_DISABLED if the user's isActive flag is false
+ * (Sprint 5A requirement: a disabled user's existing token must stop working).
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization
@@ -23,18 +26,39 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 
   const token = authHeader.split(' ')[1]
 
+  let decoded: JwtAuthPayload
   try {
-    const decoded = jwt.verify(token, env.JWT_SECRET) as JwtAuthPayload
-    req.user = {
-      userId: decoded.userId,
-      role: decoded.role || 'USER',
-    }
-    req.userId = decoded.userId
-    req.userRole = decoded.role || 'USER'
-    next()
+    decoded = jwt.verify(token, env.JWT_SECRET) as JwtAuthPayload
   } catch {
     sendError(res, 401, 'UNAUTHORIZED', 'Invalid or expired authorization token')
+    return
   }
+
+  // Check isActive in the database so that disabling a user stops their existing token immediately
+  User.findById(decoded.userId)
+    .select('isActive role')
+    .lean()
+    .then((user) => {
+      if (!user) {
+        sendError(res, 401, 'UNAUTHORIZED', 'User not found')
+        return
+      }
+      if (!user.isActive) {
+        sendError(res, 403, 'ACCOUNT_DISABLED', 'This account has been disabled. Please contact an administrator.')
+        return
+      }
+
+      req.user = {
+        userId: decoded.userId,
+        role:   decoded.role || 'USER',
+      }
+      req.userId   = decoded.userId
+      req.userRole = decoded.role || 'USER'
+      next()
+    })
+    .catch(() => {
+      sendError(res, 500, 'INTERNAL_SERVER_ERROR', 'Authentication error')
+    })
 }
 
 /**

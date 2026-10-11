@@ -191,16 +191,16 @@ async function runSmokeTests() {
       logFail('404 Envelope', err)
     }
 
-    // 3. 501 Not Implemented stub (using planned /api/verify)
+    // 3. POST /api/verify with no file → 400 INVALID_FILE (endpoint is live, no auth required)
     try {
       const res = await request('/api/verify', { method: 'POST', body: {} })
-      if (res.status === 501 && res.data?.success === false && res.data?.error?.code === 'NOT_IMPLEMENTED') {
-        logPass('501 Stub Route', `code=${res.data.error.code}`)
+      if (res.status === 400 && res.data?.success === false && res.data?.error?.code === 'INVALID_FILE') {
+        logPass('POST /api/verify (No File → 400 INVALID_FILE)', `code=${res.data.error.code}`)
       } else {
-        throw new Error(`Expected 501 NOT_IMPLEMENTED, got ${res.status}: ${JSON.stringify(res.data)}`)
+        throw new Error(`Expected 400 INVALID_FILE (no file), got ${res.status}: ${JSON.stringify(res.data)}`)
       }
     } catch (err) {
-      logFail('501 Stub Route', err)
+      logFail('POST /api/verify (No File → 400 INVALID_FILE)', err)
     }
 
     // 4. Register OK
