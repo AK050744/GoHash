@@ -65,10 +65,15 @@ import crypto from 'crypto'
 import mongoose from 'mongoose'
 import { ethers } from 'ethers'
 import app from '../src/app'
+import { env } from '../src/config/env'
 import { User } from '../src/models/User'
 import { DocumentModel } from '../src/models/Document'
 import { Notarization } from '../src/models/Notarization'
 import { BlockchainService } from '../src/services/blockchain.service'
+
+// Raise rate limits so chain tests are not throttled
+env.AUTH_RATE_LIMIT_MAX = 1000
+env.VERIFY_RATE_LIMIT_PER_MIN = 1000
 
 // ─── Test runner state ────────────────────────────────────────────────────────
 

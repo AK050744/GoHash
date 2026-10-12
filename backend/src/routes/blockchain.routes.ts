@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import { getContractMeta, getBlockchainDocument } from '../controllers/blockchain.controller'
 import { requireAuth, requireRole } from '../middleware/auth.middleware'
+import { validate } from '../middleware/validate'
+import { blockchainDocParamSchema } from '../validations/blockchain.validation'
 
 const router = Router()
 
@@ -9,6 +11,6 @@ const router = Router()
 router.get('/contract', requireAuth, requireRole('ADMIN'), getContractMeta)
 
 // Owner, NOTARY, or ADMIN: retrieve stored + live on-chain notarization data
-router.get('/:documentId', requireAuth, getBlockchainDocument)
+router.get('/:documentId', requireAuth, validate(blockchainDocParamSchema, 'params'), getBlockchainDocument)
 
 export default router

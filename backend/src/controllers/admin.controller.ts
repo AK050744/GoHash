@@ -32,14 +32,14 @@ import { BlockchainService } from '../services/blockchain.service'
  */
 function safeUser(u: any) {
   return {
-    id:            u._id.toString(),
-    name:          u.name,
-    email:         u.email,
-    role:          u.role,
+    id: u._id.toString(),
+    name: u.name,
+    email: u.email,
+    role: u.role,
     walletAddress: u.walletAddress ?? null,
-    isActive:      u.isActive,
-    createdAt:     u.createdAt,
-    updatedAt:     u.updatedAt,
+    isActive: u.isActive,
+    createdAt: u.createdAt,
+    updatedAt: u.updatedAt,
   }
 }
 
@@ -55,10 +55,10 @@ function safeUser(u: any) {
  * NEVER returns passwordHash.
  */
 export const listUsers = asyncHandler(async (req: Request, res: Response) => {
-  const roleFilter  = typeof req.query.role  === 'string' ? req.query.role  : undefined
-  const q           = typeof req.query.q     === 'string' ? req.query.q     : undefined
-  const rawLimit    = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 50
-  const limit       = Math.min(isNaN(rawLimit) || rawLimit < 1 ? 50 : rawLimit, 100)
+  const roleFilter = typeof req.query.role === 'string' ? req.query.role : undefined
+  const q = typeof req.query.q === 'string' ? req.query.q : undefined
+  const rawLimit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 50
+  const limit = Math.min(isNaN(rawLimit) || rawLimit < 1 ? 50 : rawLimit, 100)
 
   const filter: Record<string, unknown> = {}
 
@@ -91,7 +91,7 @@ export const listUsers = asyncHandler(async (req: Request, res: Response) => {
  * NEVER returns passwordHash.
  */
 export const changeUserRole = asyncHandler(async (req: Request, res: Response) => {
-  const { id }   = req.params
+  const { id } = req.params
   const { role } = req.body
 
   if (!role || !['USER', 'NOTARY', 'ADMIN'].includes(role)) {
@@ -191,7 +191,7 @@ export const listNotaries = asyncHandler(async (_req: Request, res: Response) =>
 
       return {
         ...safeUser(u),
-        linkedWallet:     u.walletAddress ?? null,
+        linkedWallet: u.walletAddress ?? null,
         onChainAuthorized: chainAvailable ? onChainAuthorized : null,
       }
     })
@@ -225,18 +225,18 @@ export const getActivity = asyncHandler(async (_req: Request, res: Response) => 
     .lean()
 
   const activity = records.map((n) => {
-    const doc        = n.documentId as any
-    const requester  = n.requestedBy as any
+    const doc = n.documentId as any
+    const requester = n.requestedBy as any
     return {
-      id:              n._id.toString(),
-      status:          n.status,
-      documentName:    doc?.originalName ?? null,
-      requesterName:   requester?.name   ?? null,
-      notaryWallet:    n.notaryWallet    ?? null,
+      id: n._id.toString(),
+      status: n.status,
+      documentName: doc?.originalName ?? null,
+      requesterName: requester?.name ?? null,
+      notaryWallet: n.notaryWallet ?? null,
       transactionHash: n.transactionHash ?? null,
-      blockNumber:     n.blockNumber     ?? null,
-      createdAt:       n.createdAt,
-      updatedAt:       n.updatedAt,
+      blockNumber: n.blockNumber ?? null,
+      createdAt: n.createdAt,
+      updatedAt: n.updatedAt,
     }
   })
 
@@ -300,19 +300,19 @@ export const getStats = asyncHandler(async (_req: Request, res: Response) => {
 
   sendSuccess(res, {
     users: {
-      total:  totalUsers,
+      total: totalUsers,
       byRole: roleMap,
     },
     notaries: {
-      total:      roleMap.NOTARY,
+      total: roleMap.NOTARY,
       withWallet: notariesWithWallet,
     },
     documents: {
-      total:    totalDocs,
+      total: totalDocs,
       byStatus: docStatusMap,
     },
     notarizations: {
-      total:    totalNotarizationsCount,
+      total: totalNotarizationsCount,
       byStatus: notStatusMap,
     },
   }, 200)

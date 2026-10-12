@@ -11,6 +11,10 @@ import { DocumentModel } from '../src/models/Document'
 import { Notarization } from '../src/models/Notarization'
 import { requireAuth, requireRole } from '../src/middleware/auth.middleware'
 
+// Raise rate limits so smoke tests are not throttled
+env.AUTH_RATE_LIMIT_MAX = 1000
+env.VERIFY_RATE_LIMIT_PER_MIN = 1000
+
 let server: http.Server | null = null
 let BASE_URL = ''
 let testsPassed = 0

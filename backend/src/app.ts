@@ -16,9 +16,9 @@ app.use(helmet())
 app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }))
 
 // ─── Request Body Parsers ────────────────────────────────────────────────────
-const bodyLimit = `${env.MAX_FILE_SIZE_MB}mb`
-app.use(express.json({ limit: bodyLimit }))
-app.use(express.urlencoded({ extended: true, limit: bodyLimit }))
+const jsonBodyLimit = '1mb'
+app.use(express.json({ limit: jsonBodyLimit }))
+app.use(express.urlencoded({ extended: true, limit: jsonBodyLimit }))
 
 // ─── Request Logging ─────────────────────────────────────────────────────────
 if (env.NODE_ENV !== 'test') {

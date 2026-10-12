@@ -284,7 +284,10 @@ export class AuthService {
     return jwt.sign(
       { userId, role },
       env.JWT_SECRET,
-      { expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'] }
+      {
+        algorithm: 'HS256',
+        expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
+      }
     )
   }
 

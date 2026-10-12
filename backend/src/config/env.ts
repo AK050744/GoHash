@@ -10,10 +10,14 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(5000),
   MONGODB_URI: z.string().min(1, 'MONGODB_URI is required').default(rawMongoUri || 'mongodb://localhost:27017/gohash'),
-  JWT_SECRET: z.string().min(8, 'JWT_SECRET must be at least 8 characters').default(process.env.JWT_SECRET || 'gohash_super_secret_jwt_key_default_dev'),
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters').default(process.env.JWT_SECRET || 'gohash_super_secret_jwt_key_default_dev'),
   JWT_EXPIRES_IN: z.string().default('7d'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   MAX_FILE_SIZE_MB: z.coerce.number().positive().default(10),
+
+  // Rate limiting for auth endpoints (POST /auth/login and /auth/register)
+  AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  AUTH_RATE_LIMIT_WINDOW_MIN: z.coerce.number().int().positive().default(15),
 
   // Seed credentials (for idempotent script seeding)
   SEED_ADMIN_NAME: z.string().default('GoHash Administrator'),

@@ -28,7 +28,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 
   let decoded: JwtAuthPayload
   try {
-    decoded = jwt.verify(token, env.JWT_SECRET) as JwtAuthPayload
+    decoded = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] }) as JwtAuthPayload
   } catch {
     sendError(res, 401, 'UNAUTHORIZED', 'Invalid or expired authorization token')
     return

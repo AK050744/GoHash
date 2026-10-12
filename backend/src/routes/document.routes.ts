@@ -8,6 +8,11 @@ import {
 } from '../controllers/document.controller'
 import { requireAuth } from '../middleware/auth.middleware'
 import { uploadPdfMiddleware } from '../middleware/upload.middleware'
+import { validate } from '../middleware/validate'
+import {
+  getDocumentsQuerySchema,
+  documentIdParamSchema,
+} from '../validations/document.validation'
 
 const router = Router()
 
@@ -16,8 +21,8 @@ router.use(requireAuth)
 
 router.post('/upload', uploadPdfMiddleware, uploadDocument)
 router.get('/stats', getDocumentStats)
-router.get('/', getDocuments)
-router.get('/:id', getDocumentById)
-router.get('/:id/file', getDocumentFile)
+router.get('/', validate(getDocumentsQuerySchema, 'query'), getDocuments)
+router.get('/:id', validate(documentIdParamSchema, 'params'), getDocumentById)
+router.get('/:id/file', validate(documentIdParamSchema, 'params'), getDocumentFile)
 
 export default router
