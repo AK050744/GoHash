@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test:smoke": "tsx scripts/smoke-test.ts",
     "test:chain": "tsx scripts/chain-test.ts",
+    "test:rbac": "tsx scripts/rbac-test.ts",
+    "test:all": "npm run test:smoke && npm run test:chain && npm run test:rbac",
     "seed": "tsx scripts/seed.ts",
     "lint": "eslint . --ext .ts"
   },
