@@ -70,15 +70,10 @@ export const updateWallet = asyncHandler(async (req: Request, res: Response) => 
   }
 
   const { walletAddress, signature } = req.body
-
-  // If signature is provided, use the verified nonce flow
-  if (signature) {
-    const user = await AuthService.linkWallet(userId, walletAddress, signature)
-    sendSuccess(res, { user }, 200)
-    return
+  if (!signature) {
+    throw ApiError.badRequest('Signature is required for wallet linking', 'VALIDATION_ERROR')
   }
 
-  // Legacy direct-update path (backward compat for smoke tests that don't sign)
-  const user = await AuthService.updateWallet(userId, walletAddress)
+  const user = await AuthService.linkWallet(userId, walletAddress, signature)
   sendSuccess(res, { user }, 200)
 })
