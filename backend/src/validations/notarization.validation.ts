@@ -11,3 +11,15 @@ export const notarizationIdParamSchema = z.object({
 export const confirmNotarizationSchema = z.object({
   transactionHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'Invalid transaction hash format'),
 })
+
+export const rejectNotarizationSchema = z.object({
+  reason: z
+    .string({
+      required_error: 'reason is required',
+      invalid_type_error: 'reason is required',
+    })
+    .refine((val) => val.trim().length > 0, {
+      message: 'reason is required',
+      params: { code: 'REASON_REQUIRED' },
+    }),
+})

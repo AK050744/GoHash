@@ -13,6 +13,7 @@ import {
   requestNotarizationSchema,
   notarizationIdParamSchema,
   confirmNotarizationSchema,
+  rejectNotarizationSchema,
 } from '../validations/notarization.validation'
 
 const router = Router()
@@ -27,7 +28,7 @@ router.get('/pending', requireAuth, requireRole('NOTARY', 'ADMIN'), getPendingNo
 router.get('/:id', requireAuth, validate(notarizationIdParamSchema, 'params'), getNotarizationById)
 
 // NOTARY only: reject / approve / confirm
-router.post('/:id/reject',  requireAuth, requireRole('NOTARY'), validate(notarizationIdParamSchema, 'params'), rejectNotarization)
+router.post('/:id/reject',  requireAuth, requireRole('NOTARY'), validate(notarizationIdParamSchema, 'params'), validateBody(rejectNotarizationSchema), rejectNotarization)
 router.post('/:id/approve', requireAuth, requireRole('NOTARY'), validate(notarizationIdParamSchema, 'params'), approveNotarization)
 router.post('/:id/confirm', requireAuth, requireRole('NOTARY'), validate(notarizationIdParamSchema, 'params'), validateBody(confirmNotarizationSchema), confirmNotarization)
 

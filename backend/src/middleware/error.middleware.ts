@@ -51,6 +51,10 @@ export function errorHandler(
 
   // 2. Zod validation error
   if (err instanceof ZodError || err.name === 'ZodError') {
+    let customCode = err.issues?.find((issue: any) => issue.params?.code)?.params?.code
+    if (!customCode && err.issues?.some((issue: any) => issue.path?.includes('reason'))) {
+      customCode = 'REASON_REQUIRED'
+    }
     const formattedMessage = err.issues
       ? err.issues.map((issue: any) => `${issue.path.join('.')}: ${issue.message}`).join('; ')
       : err.message
@@ -58,7 +62,7 @@ export function errorHandler(
     res.status(400).json({
       success: false,
       error: {
-        code: 'VALIDATION_ERROR',
+        code: customCode || 'VALIDATION_ERROR',
         message: formattedMessage,
         details: err.issues,
       },
