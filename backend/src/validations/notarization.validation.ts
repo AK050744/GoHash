@@ -14,12 +14,9 @@ export const confirmNotarizationSchema = z.object({
 
 export const rejectNotarizationSchema = z.object({
   reason: z
-    .string({
-      required_error: 'reason is required',
-      invalid_type_error: 'reason is required',
-    })
+    .string()
+    .min(1, 'reason is required')
     .refine((val) => val.trim().length > 0, {
       message: 'reason is required',
-      params: { code: 'REASON_REQUIRED' },
     }),
 })

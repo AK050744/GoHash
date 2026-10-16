@@ -15,7 +15,8 @@
 | **Sprint 4B** | `frontend/` (MetaMask integration & notary approval) | **Complete** | WalletContext, navbar wallet button, gas-free linking, notary queue & 5-step approval machine |
 | **Sprint 5A & 5B** | Full-stack (Verification API, admin management, certificate) | **Complete** | Public /api/verify, admin dashboard & notaries, on-chain addNotary/removeNotary, certificate export |
 | **Sprint 5C** | Full-stack (Metadata visibility controls) | **Next** | Public verification metadata visibility controls |
-| **Sprint 6A & 6B** | Full-stack (Security hardening & final documentation)| **Pending** | Rate limiting audit, security checklist, and project presentation package |
+| **Sprint 6A** | Backend (RBAC audit, security hardening, Zod validation) | **Complete** | RBAC matrix test (26 endpoints), Helmet, CORS pinned, rate limiting, JWT HS256 pinned, Zod schemas, typecheck 0 errors |
+| **Sprint 6B** | Docs (README, architecture, project-flow, VIVA, REQUIREMENTS_COVERAGE) | **Complete** | README.md rewritten; docs/architecture.md, docs/project-flow.md, docs/VIVA.md, docs/REQUIREMENTS_COVERAGE.md created |
 
 ---
 
