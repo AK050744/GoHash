@@ -53,12 +53,12 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 | `GET` | `/api/auth/me` | JWT | Fetch authenticated user profile | **IMPLEMENTED** |
 | `POST` | `/api/auth/wallet/nonce` | JWT | Generate one-time signed-message nonce for wallet link | **IMPLEMENTED** |
 | `PATCH` | `/api/auth/wallet` | JWT | Link wallet via signed nonce (backend never holds keys) | **IMPLEMENTED** |
-| `POST` | `/api/documents/upload` | JWT (USER) | Upload PDF file & compute SHA-256 hash | **IMPLEMENTED** |
-| `GET` | `/api/documents/stats` | JWT (USER) | Aggregate document counts (total, pending, notarized) | **IMPLEMENTED** |
-| `GET` | `/api/documents` | JWT (USER) | List user documents (newest first, optional ?status=) | **IMPLEMENTED** |
+| `POST` | `/api/documents/upload` | JWT | Upload PDF file & compute SHA-256 hash (USER, NOTARY, ADMIN) | **IMPLEMENTED** |
+| `GET` | `/api/documents/stats` | JWT | Aggregate document counts (total, pending, notarized) | **IMPLEMENTED** |
+| `GET` | `/api/documents` | JWT | List user documents (newest first, optional ?status=) | **IMPLEMENTED** |
 | `GET` | `/api/documents/:id` | JWT | Get single document metadata (owner, NOTARY, ADMIN) | **IMPLEMENTED** |
 | `GET` | `/api/documents/:id/file` | JWT | Stream PDF document inline (owner, NOTARY, ADMIN) | **IMPLEMENTED** |
-| `POST` | `/api/notarization/request` | JWT (USER) | Request notary attestation for a document | **IMPLEMENTED** |
+| `POST` | `/api/notarization/request` | JWT | Request notary attestation for an owned document (USER, NOTARY, ADMIN) | **IMPLEMENTED** |
 | `GET` | `/api/notarization/pending` | JWT (NOTARY) | List pending notarization requests | **IMPLEMENTED** |
 | `GET` | `/api/notarization` | JWT | List own notarization requests (newest first, optional ?status=) | **IMPLEMENTED** |
 | `GET` | `/api/notarization/:id` | JWT | Get single notarization details (owner, NOTARY, ADMIN) | **IMPLEMENTED** |
@@ -239,7 +239,7 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 ### 3. Documents
  
 #### `POST /api/documents/upload`
-- **Auth**: Bearer JWT (`USER`)
+- **Auth**: Bearer JWT (Role: `USER`, `NOTARY`, or `ADMIN`)
 - **Content-Type**: `multipart/form-data`
 - **Form Field**: `file` (or `document`)
 - **Validation**:
@@ -360,7 +360,7 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 ### 4. Notarization Workflows
 
 #### `POST /api/notarization/request`
-- **Auth**: Bearer JWT (`USER` owner only)
+- **Auth**: Bearer JWT (Document owner: `USER`, `NOTARY`, or `ADMIN`)
 - **Request Body**:
 ```json
 {
@@ -546,6 +546,7 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 - **Error Responses**:
   - `400 Bad Request` (`REASON_REQUIRED`): Reason is empty or missing.
   - `403 Forbidden` (`FORBIDDEN`): Caller is not a notary.
+  - `403 Forbidden` (`SELF_NOTARIZATION_NOT_ALLOWED`): A notary cannot approve or reject their own document.
   - `404 Not Found` (`NOT_FOUND`): Notarization record not found.
   - `409 Conflict` (`INVALID_STATE`): Notarization is not in `REQUESTED` or `APPROVED` status.
 
@@ -555,10 +556,11 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 - **Purpose**: Verify all preconditions, transition Notarization → `APPROVED` atomically, and return the exact smart contract method and arguments for the notary's browser wallet to execute.
 - **Allowed States**: `REQUESTED`, `APPROVED` (retry), or `FAILED`. Any other status returns `409 Conflict` (`INVALID_STATE`).
 - **Preconditions Checked**:
-  1. Notary must have a linked wallet (`400 Bad Request` / `WALLET_NOT_LINKED`).
-  2. Notary wallet must be authorized on-chain via smart contract `isNotary(address)` (`403 Forbidden` / `NOTARY_NOT_AUTHORIZED_ON_CHAIN`).
-  3. Document owner must have a linked wallet (`400 Bad Request` / `OWNER_WALLET_REQUIRED`).
-  4. Document hash must not already exist on-chain via smart contract `exists(bytes32)` (`409 Conflict` / `ALREADY_NOTARIZED`).
+  1. Notary cannot approve their own document (`403 Forbidden` / `SELF_NOTARIZATION_NOT_ALLOWED`).
+  2. Notary must have a linked wallet (`400 Bad Request` / `WALLET_NOT_LINKED`).
+  3. Notary wallet must be authorized on-chain via smart contract `isNotary(address)` (`403 Forbidden` / `NOTARY_NOT_AUTHORIZED_ON_CHAIN`).
+  4. Document owner must have a linked wallet (`400 Bad Request` / `OWNER_WALLET_REQUIRED`).
+  5. Document hash must not already exist on-chain via smart contract `exists(bytes32)` (`409 Conflict` / `ALREADY_NOTARIZED`).
 - **Success (200)**:
 ```json
 {
@@ -591,6 +593,8 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 - **Error Responses**:
   - `400 Bad Request` (`WALLET_NOT_LINKED`): Notary has no linked wallet.
   - `400 Bad Request` (`OWNER_WALLET_REQUIRED`): Document owner has no linked wallet.
+  - `403 Forbidden` (`FORBIDDEN`): Caller is not a notary.
+  - `403 Forbidden` (`SELF_NOTARIZATION_NOT_ALLOWED`): A notary cannot approve or reject their own document.
   - `403 Forbidden` (`NOTARY_NOT_AUTHORIZED_ON_CHAIN`): Notary wallet not authorized on smart contract.
   - `404 Not Found` (`NOT_FOUND`): Notarization or document not found.
   - `409 Conflict` (`ALREADY_NOTARIZED`): Document hash is already notarized on-chain.

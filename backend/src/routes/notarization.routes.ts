@@ -1,4 +1,4 @@
-import { Router } from 'express'
+-import { Router } from 'express'
 import {
   requestNotarization,
   getPendingNotarizations,
@@ -33,7 +33,7 @@ router.get('/', requireAuth, validate(getNotarizationsQuerySchema, 'query'), get
 router.get('/:id', requireAuth, validate(notarizationIdParamSchema, 'params'), getNotarizationById)
 
 // NOTARY only: reject / approve / confirm
-router.post('/:id/reject',  requireAuth, requireRole('NOTARY'), validate(notarizationIdParamSchema, 'params'), validateBody(rejectNotarizationSchema), rejectNotarization)
+router.post('/:id/reject', requireAuth, requireRole('NOTARY'), validate(notarizationIdParamSchema, 'params'), validateBody(rejectNotarizationSchema), rejectNotarization)
 router.post('/:id/approve', requireAuth, requireRole('NOTARY'), validate(notarizationIdParamSchema, 'params'), approveNotarization)
 router.post('/:id/confirm', requireAuth, requireRole('NOTARY'), validate(notarizationIdParamSchema, 'params'), validateBody(confirmNotarizationSchema), confirmNotarization)
 

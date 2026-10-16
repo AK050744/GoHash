@@ -279,6 +279,14 @@ export class NotarizationService {
       throw ApiError.notFound('Notarization not found', 'NOT_FOUND')
     }
 
+    if (n.requestedBy.toString() === notaryId) {
+      throw new ApiError(
+        403,
+        'SELF_NOTARIZATION_NOT_ALLOWED',
+        'A notary cannot approve or reject their own document.'
+      )
+    }
+
     if (n.status !== 'REQUESTED' && n.status !== 'APPROVED') {
       throw new ApiError(
         409,
@@ -318,6 +326,7 @@ export class NotarizationService {
    * Allowed only from REQUESTED, APPROVED (retry) or FAILED; otherwise 409 INVALID_STATE.
    *
    * Preconditions (each with its own error code):
+   *   - Notary cannot approve their own document   (403 SELF_NOTARIZATION_NOT_ALLOWED)
    *   - Notary has a linked wallet                 (400 WALLET_NOT_LINKED)
    *   - Wallet is authorized on-chain via isNotary (403 NOTARY_NOT_AUTHORIZED_ON_CHAIN)
    *   - Document owner has a linked wallet         (400 OWNER_WALLET_REQUIRED)
@@ -334,6 +343,14 @@ export class NotarizationService {
     const n = await Notarization.findById(notarizationId)
     if (!n) {
       throw ApiError.notFound('Notarization not found', 'NOT_FOUND')
+    }
+
+    if (n.requestedBy.toString() === notaryId) {
+      throw new ApiError(
+        403,
+        'SELF_NOTARIZATION_NOT_ALLOWED',
+        'A notary cannot approve or reject their own document.'
+      )
     }
 
     if (n.status !== 'REQUESTED' && n.status !== 'APPROVED' && n.status !== 'FAILED') {

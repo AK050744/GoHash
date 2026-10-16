@@ -670,6 +670,64 @@ async function runChainTests() {
       } else {
         throw new Error(`Expected 200 with contract args, got ${successApprove.status}: ${JSON.stringify(successApprove.data)}`)
       }
+
+      // 10g. Self-notarization prevention: notary uploads own document, requests notarization, approve returns 403 SELF_NOTARIZATION_NOT_ALLOWED
+      const notaryPdf = Buffer.from(`%PDF-1.4\n%Notary Self Test ${Date.now()}\n%%EOF`)
+      const notaryUpRes = await uploadFileRequest(
+        '/api/documents/upload',
+        notaryPdf,
+        'notary_self_test.pdf',
+        'application/pdf',
+        notaryToken
+      )
+      if (notaryUpRes.status !== 201 || !notaryUpRes.data?.document?.id) {
+        throw new Error(`Failed to upload document as notary: ${JSON.stringify(notaryUpRes.data)}`)
+      }
+      const notarySelfDocId = notaryUpRes.data.document.id
+
+      const notarySelfReq = await request('/api/notarization/request', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${notaryToken}` },
+        body: { documentId: notarySelfDocId },
+      })
+      if (notarySelfReq.status !== 201 || !notarySelfReq.data?.notarization?.id) {
+        throw new Error(`Failed to create notarization request for notary own doc: ${JSON.stringify(notarySelfReq.data)}`)
+      }
+      const selfNotarizationId = notarySelfReq.data.notarization.id
+
+      // Notary attempts to approve their own document -> 403 SELF_NOTARIZATION_NOT_ALLOWED
+      const selfApproveRes = await request(`/api/notarization/${selfNotarizationId}/approve`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${notaryToken}` },
+      })
+      if (
+        selfApproveRes.status === 403 &&
+        selfApproveRes.data?.error?.code === 'SELF_NOTARIZATION_NOT_ALLOWED' &&
+        selfApproveRes.data?.error?.message === 'A notary cannot approve or reject their own document.'
+      ) {
+        // Also verify reject gives 403 SELF_NOTARIZATION_NOT_ALLOWED
+        const selfRejectRes = await request(`/api/notarization/${selfNotarizationId}/reject`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${notaryToken}` },
+          body: { reason: 'Attempting self-rejection' },
+        })
+        if (
+          selfRejectRes.status === 403 &&
+          selfRejectRes.data?.error?.code === 'SELF_NOTARIZATION_NOT_ALLOWED' &&
+          selfRejectRes.data?.error?.message === 'A notary cannot approve or reject their own document.'
+        ) {
+          logPass(
+            'self-notarization prevented -> 403 SELF_NOTARIZATION_NOT_ALLOWED',
+            'approve & reject blocked for own document'
+          )
+        } else {
+          throw new Error(`Expected 403 SELF_NOTARIZATION_NOT_ALLOWED on reject, got ${selfRejectRes.status}: ${JSON.stringify(selfRejectRes.data)}`)
+        }
+      } else {
+        throw new Error(
+          `Expected 403 SELF_NOTARIZATION_NOT_ALLOWED on approve, got ${selfApproveRes.status}: ${JSON.stringify(selfApproveRes.data)}`
+        )
+      }
     } catch (err) {
       logFail('approve: preconditions & return args', err)
     }
