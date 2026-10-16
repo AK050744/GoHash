@@ -207,6 +207,28 @@ async function runSmokeTests() {
       logFail('POST /api/verify (No File → 400 INVALID_FILE)', err)
     }
 
+    // 3b. GET /api/verify/hash/:sha256 (public hash verification)
+    try {
+      // Invalid format -> 400 INVALID_HASH
+      const badRes = await request('/api/verify/hash/not-a-valid-sha256')
+      if (badRes.status === 400 && badRes.data?.error?.code === 'INVALID_HASH') {
+        logPass('GET /api/verify/hash/:sha256 (Invalid Hash → 400 INVALID_HASH)', `code=${badRes.data.error.code}`)
+      } else {
+        throw new Error(`Expected 400 INVALID_HASH, got ${badRes.status}: ${JSON.stringify(badRes.data)}`)
+      }
+
+      // Valid unnotarized sha256 -> 200 NOT_VERIFIED
+      const dummySha = 'c'.repeat(64)
+      const okRes = await request(`/api/verify/hash/${dummySha}`)
+      if (okRes.status === 200 && okRes.data?.success === true && okRes.data?.status === 'NOT_VERIFIED') {
+        logPass('GET /api/verify/hash/:sha256 (Unnotarized Hash → 200 NOT_VERIFIED)', `status=${okRes.data.status}`)
+      } else {
+        throw new Error(`Expected 200 NOT_VERIFIED, got ${okRes.status}: ${JSON.stringify(okRes.data)}`)
+      }
+    } catch (err) {
+      logFail('GET /api/verify/hash/:sha256', err)
+    }
+
     // 4. Register OK
     try {
       const res = await request('/api/auth/register', {
@@ -657,6 +679,50 @@ async function runSmokeTests() {
       }
     } catch (err) {
       logFail('POST /api/notarization/request', err)
+    }
+
+    // 20b. GET /api/notarization (List User Notarizations)
+    try {
+      // Anonymous -> 401
+      const anonRes = await request('/api/notarization')
+      if (anonRes.status === 401) {
+        logPass('GET /api/notarization (Anonymous → 401)', 'status=401')
+      } else {
+        throw new Error(`Expected 401 for anonymous, got ${anonRes.status}`)
+      }
+
+      // Authenticated -> 200 with list
+      const listRes = await request('/api/notarization', {
+        headers: { Authorization: `Bearer ${authToken}` },
+      })
+      if (
+        listRes.status === 200 &&
+        listRes.data?.success === true &&
+        Array.isArray(listRes.data?.notarizations) &&
+        listRes.data.notarizations.length >= 1 &&
+        listRes.data.notarizations[0].document?.id === uploadedDocId
+      ) {
+        logPass('GET /api/notarization (Authenticated List)', `Count: ${listRes.data.notarizations.length}, Status: ${listRes.data.notarizations[0].status}`)
+      } else {
+        throw new Error(`Expected 200 with notarizations array, got ${listRes.status}: ${JSON.stringify(listRes.data)}`)
+      }
+
+      // With ?status=REQUESTED filter
+      const filterRes = await request('/api/notarization?status=REQUESTED', {
+        headers: { Authorization: `Bearer ${authToken}` },
+      })
+      if (
+        filterRes.status === 200 &&
+        filterRes.data?.success === true &&
+        Array.isArray(filterRes.data?.notarizations) &&
+        filterRes.data.notarizations.length >= 1
+      ) {
+        logPass('GET /api/notarization?status=REQUESTED', `Filtered Count: ${filterRes.data.notarizations.length}`)
+      } else {
+        throw new Error(`Expected 200 with filtered notarizations, got ${filterRes.status}: ${JSON.stringify(filterRes.data)}`)
+      }
+    } catch (err) {
+      logFail('GET /api/notarization', err)
     }
 
     // 21. Stats Numbers Correct

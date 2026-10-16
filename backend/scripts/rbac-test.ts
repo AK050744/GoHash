@@ -382,7 +382,7 @@ async function runRbacTests() {
   })
 
   console.log('\n--------------------------------------------------------------------------------')
-  console.log('                    RBAC Matrix Test (26 API Endpoints)')
+  console.log('                    RBAC Matrix Test (28 API Endpoints)')
   console.log('--------------------------------------------------------------------------------')
 
   type EndpointSpec = {
@@ -530,19 +530,26 @@ async function runRbacTests() {
     {
       id: 14,
       method: 'GET',
+      route: '/api/notarization',
+      expected: [401, 200, 200, 200],
+      call: async (token) => (await request('/api/notarization', { token })).status,
+    },
+    {
+      id: 15,
+      method: 'GET',
       route: '/api/notarization/:id',
       expected: [401, 200, 200, 200], // user1 is owner -> 200, notary -> 200, admin -> 200
       call: async (token) => (await request(`/api/notarization/${notarization1Id}`, { token })).status,
     },
     {
-      id: 15,
+      id: 16,
       method: 'POST',
       route: '/api/notarization/:id/approve',
       expected: [401, 403, 200, 403],
       call: async (token) => (await request(`/api/notarization/${notarization1Id}/approve`, { method: 'POST', token })).status,
     },
     {
-      id: 16,
+      id: 17,
       method: 'POST',
       route: '/api/notarization/:id/reject',
       expected: [401, 403, 200, 403],
@@ -556,7 +563,7 @@ async function runRbacTests() {
         ).status,
     },
     {
-      id: 17,
+      id: 18,
       method: 'POST',
       route: '/api/notarization/:id/confirm',
       expected: [401, 403, 422, 403], // NOTARY reaches confirmation logic (returns 422 for dummy hash), anon 401, USER 403, ADMIN 403
@@ -570,21 +577,21 @@ async function runRbacTests() {
         ).status,
     },
     {
-      id: 18,
+      id: 19,
       method: 'GET',
       route: '/api/blockchain/contract',
       expected: [401, 403, 403, 200],
       call: async (token) => (await request('/api/blockchain/contract', { token })).status,
     },
     {
-      id: 19,
+      id: 20,
       method: 'GET',
       route: '/api/blockchain/:documentId',
       expected: [401, 200, 200, 200], // user1 is owner -> 200, notary -> 200, admin -> 200
       call: async (token) => (await request(`/api/blockchain/${doc1Id}`, { token })).status,
     },
     {
-      id: 20,
+      id: 21,
       method: 'POST',
       route: '/api/verify',
       expected: [200, 200, 200, 200],
@@ -594,14 +601,27 @@ async function runRbacTests() {
       },
     },
     {
-      id: 21,
+      id: 22,
+      method: 'GET',
+      route: '/api/verify/hash/:sha256',
+      expected: [200, 200, 200, 200],
+      call: async (token) =>
+        (
+          await request(
+            '/api/verify/hash/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+            { token }
+          )
+        ).status,
+    },
+    {
+      id: 23,
       method: 'GET',
       route: '/api/admin/users',
       expected: [401, 403, 403, 200],
       call: async (token) => (await request('/api/admin/users', { token })).status,
     },
     {
-      id: 22,
+      id: 24,
       method: 'PATCH',
       route: '/api/admin/users/:id/role',
       expected: [401, 403, 403, 200],
@@ -615,7 +635,7 @@ async function runRbacTests() {
         ).status,
     },
     {
-      id: 23,
+      id: 25,
       method: 'PATCH',
       route: '/api/admin/users/:id/status',
       expected: [401, 403, 403, 200],
@@ -629,21 +649,21 @@ async function runRbacTests() {
         ).status,
     },
     {
-      id: 24,
+      id: 26,
       method: 'GET',
       route: '/api/admin/notaries',
       expected: [401, 403, 403, 200],
       call: async (token) => (await request('/api/admin/notaries', { token })).status,
     },
     {
-      id: 25,
+      id: 27,
       method: 'GET',
       route: '/api/admin/activity',
       expected: [401, 403, 403, 200],
       call: async (token) => (await request('/api/admin/activity', { token })).status,
     },
     {
-      id: 26,
+      id: 28,
       method: 'GET',
       route: '/api/admin/stats',
       expected: [401, 403, 403, 200],

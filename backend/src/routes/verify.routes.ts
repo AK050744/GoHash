@@ -7,7 +7,7 @@
  */
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { verifyDocument } from '../controllers/verify.controller'
+import { verifyDocument, verifyHash } from '../controllers/verify.controller'
 import { uploadPdfMiddleware } from '../middleware/upload.middleware'
 import { env } from '../config/env'
 
@@ -29,5 +29,6 @@ const verifyLimiter = rateLimit({
 
 // Public: no requireAuth
 router.post('/', verifyLimiter, uploadPdfMiddleware, verifyDocument)
+router.get('/hash/:sha256', verifyLimiter, verifyHash)
 
 export default router

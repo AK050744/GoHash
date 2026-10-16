@@ -157,6 +157,60 @@ export class NotarizationService {
   }
 
   /**
+   * Get all notarization requests for a specific user (newest first).
+   * Optional status filter.
+   * Includes document { id, originalName, sha256Hash, createdAt } and owner { name } (strictly no email).
+   */
+  static async getUserNotarizations(userId: string, status?: string) {
+    const filter: Record<string, unknown> = { requestedBy: userId }
+    if (status) {
+      filter.status = status
+    }
+
+    const notarizations = await Notarization.find(filter)
+      .populate('documentId')
+      .populate('requestedBy', 'name')
+      .sort({ createdAt: -1 })
+
+    return notarizations.map((n) => {
+      const doc = n.documentId as any
+      const owner = n.requestedBy as any
+
+      return {
+        id:              n._id.toString(),
+        documentId:      doc?._id ? doc._id.toString() : n.documentId.toString(),
+        requestedBy:     owner?._id ? owner._id.toString() : n.requestedBy.toString(),
+        notaryId:        n.notaryId?.toString() ?? null,
+        notaryWallet:    n.notaryWallet ?? null,
+        documentHash:    n.documentHash,
+        transactionHash: n.transactionHash ?? null,
+        blockNumber:     n.blockNumber ?? null,
+        contractAddress: n.contractAddress ?? null,
+        chainId:         n.chainId ?? null,
+        onChainTimestamp: n.onChainTimestamp ?? null,
+        rejectionReason: n.rejectionReason ?? null,
+        failureReason:   n.failureReason ?? null,
+        status:          n.status,
+        createdAt:       n.createdAt,
+        updatedAt:       n.updatedAt,
+        document: doc
+          ? {
+              id:           doc._id ? doc._id.toString() : doc.toString(),
+              originalName: doc.originalName || '',
+              sha256Hash:   doc.sha256Hash || n.documentHash,
+              createdAt:    doc.createdAt || n.createdAt,
+            }
+          : null,
+        owner: owner
+          ? {
+              name: owner.name || '',
+            }
+          : null,
+      }
+    })
+  }
+
+  /**
    * Get a single notarization record.
    * Accessible by: the requesting owner (by userId), NOTARY, or ADMIN; others 404.
    */

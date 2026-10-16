@@ -20,3 +20,7 @@ export const rejectNotarizationSchema = z.object({
       message: 'reason is required',
     }),
 })
+
+export const getNotarizationsQuerySchema = z.object({
+  status: z.enum(['REQUESTED', 'APPROVED', 'CONFIRMED', 'REJECTED', 'FAILED']).optional(),
+})

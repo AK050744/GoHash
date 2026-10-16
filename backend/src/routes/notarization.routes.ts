@@ -2,6 +2,7 @@ import { Router } from 'express'
 import {
   requestNotarization,
   getPendingNotarizations,
+  getUserNotarizations,
   getNotarizationById,
   approveNotarization,
   rejectNotarization,
@@ -14,6 +15,7 @@ import {
   notarizationIdParamSchema,
   confirmNotarizationSchema,
   rejectNotarizationSchema,
+  getNotarizationsQuerySchema,
 } from '../validations/notarization.validation'
 
 const router = Router()
@@ -23,6 +25,9 @@ router.post('/request', requireAuth, validateBody(requestNotarizationSchema), re
 
 // NOTARY / ADMIN: list pending requests (with document + owner info)
 router.get('/pending', requireAuth, requireRole('NOTARY', 'ADMIN'), getPendingNotarizations)
+
+// Authenticated user: list own notarizations (with optional ?status= filter)
+router.get('/', requireAuth, validate(getNotarizationsQuerySchema, 'query'), getUserNotarizations)
 
 // NOTARY, ADMIN, or the requesting owner: get a single notarization
 router.get('/:id', requireAuth, validate(notarizationIdParamSchema, 'params'), getNotarizationById)

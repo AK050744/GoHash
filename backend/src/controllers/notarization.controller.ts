@@ -33,6 +33,17 @@ export const getPendingNotarizations = asyncHandler(async (_req: Request, res: R
 })
 
 /**
+ * GET /api/notarization (USER, NOTARY, ADMIN)
+ * Returns all notarization requests created by the authenticated user.
+ * Optional query parameter ?status=REQUESTED|APPROVED|CONFIRMED|REJECTED|FAILED
+ */
+export const getUserNotarizations = asyncHandler(async (req: Request, res: Response) => {
+  const status = typeof req.query.status === 'string' ? req.query.status : undefined
+  const notarizations = await NotarizationService.getUserNotarizations(req.userId!, status)
+  sendSuccess(res, { notarizations }, 200)
+})
+
+/**
  * GET /api/notarization/:id (NOTARY, or the requesting owner; others 404)
  * Returns a single notarization record.
  */

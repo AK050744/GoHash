@@ -41,6 +41,82 @@ import { Notarization } from '../models/Notarization'
 import { env } from '../config/env'
 
 /**
+ * Internal helper to query on-chain notarization status and supplement
+ * with MongoDB metadata if confirmed.
+ */
+async function lookupVerificationRecord(hash: string, notFoundMessage: string) {
+  // Query on-chain (throws 503 on infra error)
+  const onChain = await BlockchainService.getRecord(hash)
+
+  // Not found on-chain
+  if (!onChain.exists) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        status:  'NOT_VERIFIED',
+        hash,
+        message: notFoundMessage,
+      },
+    }
+  }
+
+  // Found on-chain — look up MongoDB for extra metadata
+  let txHash: string | undefined
+  let blockNumber: number | undefined
+  let documentInfo: { id: string; originalName: string } | undefined
+
+  try {
+    const dbRecord = await Notarization.findOne({
+      documentHash: hash,
+      status: 'CONFIRMED',
+    })
+      .sort({ updatedAt: -1 })
+      .populate<{ documentId: { _id: any; originalName: string } }>('documentId', 'originalName')
+      .lean()
+
+    if (dbRecord) {
+      if (dbRecord.transactionHash) txHash       = dbRecord.transactionHash
+      if (dbRecord.blockNumber)     blockNumber   = dbRecord.blockNumber
+
+      const populated = dbRecord.documentId as any
+      if (populated && typeof populated === 'object' && populated.originalName) {
+        documentInfo = {
+          id:           populated._id.toString(),
+          originalName: populated.originalName,
+        }
+      }
+    }
+  } catch {
+    // MongoDB lookup failure is non-fatal; on-chain data is still valid
+  }
+
+  // Build record — uses on-chain data as the authoritative source
+  const record: Record<string, unknown> = {
+    ownerWallet:     onChain.owner,
+    notaryWallet:    onChain.notary,
+    timestamp:       onChain.timestamp,
+    contractAddress: BlockchainService.getContractInfo().address,
+  }
+
+  if (txHash) record.transactionHash = txHash
+  if (blockNumber !== undefined) record.blockNumber = blockNumber
+
+  const body: Record<string, unknown> = {
+    success: true,
+    status:  'VERIFIED',
+    hash,
+    record,
+  }
+
+  if (documentInfo) {
+    body.document = documentInfo
+  }
+
+  return { status: 200, body }
+}
+
+/**
  * POST /api/verify
  * Public endpoint — no authentication required.
  * Rate-limited at the route level.
@@ -77,76 +153,31 @@ export const verifyDocument = asyncHandler(async (req: Request, res: Response) =
   // ── 3. Compute SHA-256 (server-side only; file is never stored) ────────────
   const hash = computeSha256(file.buffer)
 
-  // ── 4. Query on-chain (throws 503 on infra error) ──────────────────────────
-  const onChain = await BlockchainService.getRecord(hash)
+  // ── 4. Verify against chain and DB ─────────────────────────────────────────
+  const { status, body } = await lookupVerificationRecord(hash, "No notarization record matches this file's hash.")
+  res.status(status).json(body)
+})
 
-  // ── 5. Not found on-chain ────────────────────────────────────────────────────
-  if (!onChain.exists) {
-    res.status(200).json({
-      success: true,
-      status:  'NOT_VERIFIED',
-      hash,
-      message: 'No notarization record matches this file\'s hash.',
-    })
-    return
+/**
+ * GET /api/verify/hash/:sha256
+ * Public endpoint — verify directly by SHA-256 hex string.
+ * Rate-limited at the route level.
+ */
+export const verifyHash = asyncHandler(async (req: Request, res: Response) => {
+  let hash = req.params.sha256
+  if (!hash || typeof hash !== 'string') {
+    throw ApiError.badRequest('SHA-256 hash parameter is required', 'INVALID_HASH')
   }
 
-  // ── 6. Found on-chain — look up MongoDB for extra metadata ────────────────
-  // MongoDB is consulted ONLY for the optional transactionHash, blockNumber and
-  // document.id / originalName fields. On-chain data is the authoritative source.
-
-  let txHash: string | undefined
-  let blockNumber: number | undefined
-  let documentInfo: { id: string; originalName: string } | undefined
-
-  try {
-    const dbRecord = await Notarization.findOne({
-      documentHash: hash,
-      status: 'CONFIRMED',
-    })
-      .sort({ updatedAt: -1 })
-      .populate<{ documentId: { _id: any; originalName: string } }>('documentId', 'originalName')
-      .lean()
-
-    if (dbRecord) {
-      if (dbRecord.transactionHash) txHash       = dbRecord.transactionHash
-      if (dbRecord.blockNumber)     blockNumber   = dbRecord.blockNumber
-
-      // Populated document may be an object or null
-      const populated = dbRecord.documentId as any
-      if (populated && typeof populated === 'object' && populated.originalName) {
-        documentInfo = {
-          id:           populated._id.toString(),
-          originalName: populated.originalName,
-        }
-      }
-    }
-  } catch {
-    // MongoDB lookup failure is non-fatal; on-chain data is still valid
+  hash = hash.trim().toLowerCase()
+  if (hash.startsWith('0x')) {
+    hash = hash.slice(2)
   }
 
-  // Build record — uses on-chain data as the authoritative source
-  const record: Record<string, unknown> = {
-    ownerWallet:     onChain.owner,
-    notaryWallet:    onChain.notary,
-    // on-chain timestamp: proves hash was recorded no later than this time
-    timestamp:       onChain.timestamp,
-    contractAddress: BlockchainService.getContractInfo().address,
+  if (!/^[a-f0-9]{64}$/.test(hash)) {
+    throw ApiError.badRequest('Invalid SHA-256 hash format. Must be a 64-character hexadecimal string.', 'INVALID_HASH')
   }
 
-  if (txHash)      record.transactionHash = txHash
-  if (blockNumber !== undefined) record.blockNumber = blockNumber
-
-  const response: Record<string, unknown> = {
-    success: true,
-    status:  'VERIFIED',
-    hash,
-    record,
-  }
-
-  if (documentInfo) {
-    response.document = documentInfo
-  }
-
-  res.status(200).json(response)
+  const { status, body } = await lookupVerificationRecord(hash, 'No notarization record matches this hash.')
+  res.status(status).json(body)
 })

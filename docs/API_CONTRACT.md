@@ -60,6 +60,7 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 | `GET` | `/api/documents/:id/file` | JWT | Stream PDF document inline (owner, NOTARY, ADMIN) | **IMPLEMENTED** |
 | `POST` | `/api/notarization/request` | JWT (USER) | Request notary attestation for a document | **IMPLEMENTED** |
 | `GET` | `/api/notarization/pending` | JWT (NOTARY) | List pending notarization requests | **IMPLEMENTED** |
+| `GET` | `/api/notarization` | JWT | List own notarization requests (newest first, optional ?status=) | **IMPLEMENTED** |
 | `GET` | `/api/notarization/:id` | JWT | Get single notarization details (owner, NOTARY, ADMIN) | **IMPLEMENTED** |
 | `POST` | `/api/notarization/:id/approve` | JWT (NOTARY) | Validate preconditions and prepare on-chain notarize call | **IMPLEMENTED** |
 | `POST` | `/api/notarization/:id/reject` | JWT (NOTARY) | Reject notarization with reason | **IMPLEMENTED** |
@@ -67,6 +68,7 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 | `GET` | `/api/blockchain/contract` | JWT (ADMIN) | Smart contract address, chainId, and full ABI for wallet operations | **IMPLEMENTED** |
 | `GET` | `/api/blockchain/:documentId` | JWT | Retrieve stored and on-chain notarization receipt | **IMPLEMENTED** |
 | `POST` | `/api/verify` | Public | Verify PDF document against blockchain without storing file | **IMPLEMENTED** |
+| `GET` | `/api/verify/hash/:sha256` | Public | Verify SHA-256 hash string directly against blockchain | **IMPLEMENTED** |
 | `GET` | `/api/admin/users` | JWT (ADMIN) | List users with optional role and name/email query | **IMPLEMENTED** |
 | `PATCH` | `/api/admin/users/:id/role` | JWT (ADMIN) | Change user role (USER, NOTARY, ADMIN) | **IMPLEMENTED** |
 | `PATCH` | `/api/admin/users/:id/status` | JWT (ADMIN) | Enable or disable user account (immediate JWT invalidation) | **IMPLEMENTED** |
@@ -431,6 +433,51 @@ All UI copy, API responses, error messages, code comments, and documentation mus
   - `401 Unauthorized` (`UNAUTHORIZED`): Missing or invalid token.
   - `403 Forbidden` (`FORBIDDEN`): User does not possess the `NOTARY` or `ADMIN` role.
 
+#### `GET /api/notarization`
+- **Auth**: Bearer JWT (`USER`, `NOTARY`, or `ADMIN`)
+- **Status**: `IMPLEMENTED`
+- **Purpose**: List all notarization requests submitted by the authenticated user (newest first), with populated document details.
+- **Query Parameters**:
+  - `status` (optional): Filter requests by status (`REQUESTED`, `APPROVED`, `CONFIRMED`, `REJECTED`, `FAILED`).
+- **Success (200)**:
+```json
+{
+  "success": true,
+  "notarizations": [
+    {
+      "id": "67039a8c1719b2241cfb9999",
+      "documentId": "67039a8c1719b2241cfb5678",
+      "requestedBy": "67039a8c1719b2241cfb1234",
+      "notaryId": "67039a8c1719b2241cfb7777",
+      "notaryWallet": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      "documentHash": "a1b2c3d4e5f6...",
+      "transactionHash": "0x4f8a12...",
+      "blockNumber": 12,
+      "contractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "chainId": 31337,
+      "onChainTimestamp": 1728472500,
+      "rejectionReason": null,
+      "failureReason": null,
+      "status": "CONFIRMED",
+      "createdAt": "2026-10-08T10:05:00.000Z",
+      "updatedAt": "2026-10-08T10:06:00.000Z",
+      "document": {
+        "id": "67039a8c1719b2241cfb5678",
+        "originalName": "contract.pdf",
+        "sha256Hash": "a1b2c3d4e5f6...",
+        "createdAt": "2026-10-08T10:00:00.000Z"
+      },
+      "owner": {
+        "name": "Alice Doe"
+      }
+    }
+  ]
+}
+```
+- **Error Responses**:
+  - `401 Unauthorized` (`UNAUTHORIZED`): Missing or invalid token.
+  - `400 Bad Request` (`VALIDATION_ERROR`): Invalid `status` query parameter.
+
 #### `GET /api/notarization/:id`
 - **Auth**: Bearer JWT (`NOTARY`, `ADMIN`, or the requesting document owner)
 - **Status**: `IMPLEMENTED`
@@ -736,6 +783,54 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 - **Error Responses**:
   - `400 Bad Request` (`INVALID_FILE`): Missing file or file does not have `%PDF-` header / `application/pdf` MIME type.
   - `400 Bad Request` (`FILE_TOO_LARGE`): File exceeds configured `MAX_FILE_SIZE_MB`.
+  - `429 Too Many Requests` (`RATE_LIMITED`): Exceeded per-minute rate limit.
+  - `503 Service Unavailable` (`CHAIN_UNREACHABLE`): Blockchain RPC provider unreachable.
+  - `503 Service Unavailable` (`CONTRACT_NOT_DEPLOYED`): DocumentNotary contract not deployed at configured address.
+
+#### `GET /api/verify/hash/:sha256`
+- **Auth**: None (Public endpoint; rate-limited per IP)
+- **Status**: `IMPLEMENTED`
+- **Rate Limit**: Default 60 requests/minute per IP (`VERIFY_RATE_LIMIT_PER_MIN`), returns HTTP 429 `RATE_LIMITED` when exceeded.
+- **Request Parameters**:
+  - `sha256` (URL path parameter): 64-character hexadecimal SHA-256 hash string (case-insensitive, optional leading `0x` tolerated).
+- **Processing Rules**:
+  - Validates `sha256` is a valid 64-character hex string.
+  - Looks up hash on-chain directly via `DocumentNotary.getRecord(bytes32)`.
+  - Authoritative source is on-chain data: `ownerWallet`, `notaryWallet`, and on-chain `timestamp`.
+  - The on-chain `timestamp` indicates that the hash was **recorded no later than this time**.
+  - If found on-chain, queries database for extra metadata (`transactionHash`, `blockNumber`, and document metadata: `id`, `originalName`). If database record is missing, returns on-chain record without MongoDB extras.
+  - Privacy guarantee: Owner name, email, or any private user details are **never returned**.
+- **Success - Record Found (200)**:
+```json
+{
+  "success": true,
+  "status": "VERIFIED",
+  "hash": "a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0",
+  "record": {
+    "ownerWallet": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+    "notaryWallet": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+    "timestamp": 1728472500,
+    "contractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "transactionHash": "0x4f8a123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "blockNumber": 14
+  },
+  "document": {
+    "id": "67039a8c1719b2241cfb5678",
+    "originalName": "contract.pdf"
+  }
+}
+```
+- **Success - Record Not Found (200)**:
+```json
+{
+  "success": true,
+  "status": "NOT_VERIFIED",
+  "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "message": "No notarization record matches this hash."
+}
+```
+- **Error Responses**:
+  - `400 Bad Request` (`INVALID_HASH`): Invalid SHA-256 hash parameter.
   - `429 Too Many Requests` (`RATE_LIMITED`): Exceeded per-minute rate limit.
   - `503 Service Unavailable` (`CHAIN_UNREACHABLE`): Blockchain RPC provider unreachable.
   - `503 Service Unavailable` (`CONTRACT_NOT_DEPLOYED`): DocumentNotary contract not deployed at configured address.
