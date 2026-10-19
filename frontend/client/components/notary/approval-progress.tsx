@@ -20,7 +20,7 @@ const stepStatusByState: Record<ApprovalState, StepStatus[]> = {
   pending: ["done", "done", "active", "pending"],
   verifying: ["done", "done", "done", "active"],
   confirmed: ["done", "done", "done", "done"],
-  failed: ["done", "done", "failed", "pending"],
+  failed: ["failed", "pending", "pending", "pending"],
   "rejected-by-user": ["done", "failed", "pending", "pending"],
 };
 
@@ -59,11 +59,6 @@ const statusAlertByState: Partial<
     title: "Notarization recorded",
     description: "The transaction is confirmed on-chain.",
   },
-  failed: {
-    variant: "error",
-    title: "Transaction failed",
-    description: "Nothing was recorded on-chain. Try again.",
-  },
   "rejected-by-user": {
     variant: "warning",
     title: "Rejected in wallet",
@@ -74,26 +69,47 @@ const statusAlertByState: Partial<
 export interface ApprovalProgressProps {
   state: ApprovalState;
   receipt?: RequestReceipt | null;
+  stepStatuses?: StepStatus[];
+  error?: string | null;
+  errorTitle?: string;
+  errorVariant?: "error" | "warning";
+  hideStatusAlert?: boolean;
 }
 
-function ApprovalProgress({ state, receipt }: ApprovalProgressProps) {
+function ApprovalProgress({
+  state,
+  receipt,
+  stepStatuses,
+  error,
+  errorTitle,
+  errorVariant = "error",
+  hideStatusAlert = false,
+}: ApprovalProgressProps) {
   const steps: StepperStep[] = stepLabels.map((label, index) => ({
     label,
-    status: stepStatusByState[state][index],
+    status: stepStatuses ? stepStatuses[index] : stepStatusByState[state][index],
   }));
-  const statusAlert = statusAlertByState[state];
+
+  const statusAlert = !hideStatusAlert && !error ? statusAlertByState[state] : null;
 
   return (
     <div className="flex flex-col gap-6">
       <Stepper steps={steps} />
 
       <div aria-live="polite" className="flex flex-col gap-4">
-        {statusAlert && (
+        {error ? (
+          <Alert variant={errorVariant}>
+            <AlertTitle>{errorTitle ?? error}</AlertTitle>
+            {errorTitle && error !== errorTitle && (
+              <AlertDescription>{error}</AlertDescription>
+            )}
+          </Alert>
+        ) : statusAlert ? (
           <Alert variant={statusAlert.variant}>
             <AlertTitle>{statusAlert.title}</AlertTitle>
             <AlertDescription>{statusAlert.description}</AlertDescription>
           </Alert>
-        )}
+        ) : null}
 
         {state === "confirmed" && (
           <div className="brut-border flex flex-col gap-5 rounded-card bg-white p-5">

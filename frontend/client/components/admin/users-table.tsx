@@ -20,9 +20,10 @@ const roleVariant = {
 export interface UsersTableProps {
   users: ManagedUser[];
   currentUserId: string | null;
+  onChanged?: () => void;
 }
 
-function UsersTable({ users, currentUserId }: UsersTableProps) {
+function UsersTable({ users, currentUserId, onChanged }: UsersTableProps) {
   return (
     <Table>
       <TableHeader>
@@ -53,7 +54,11 @@ function UsersTable({ users, currentUserId }: UsersTableProps) {
               <OnChainBadge status={user.onChain} />
             </TableCell>
             <TableCell>
-              <UserActions user={user} isSelf={user.id === currentUserId} />
+              <UserActions
+                user={user}
+                isSelf={user.id === currentUserId}
+                onChanged={onChanged}
+              />
             </TableCell>
           </TableRow>
         ))}

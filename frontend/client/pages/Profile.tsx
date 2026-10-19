@@ -12,10 +12,11 @@ import {
   WalletStatusCard,
 } from "@/components/wallet/wallet-status-card";
 import { useAuth } from "@/context/AuthContext";
-import { api } from "@/lib/api";
+import { formatWalletError, linkMetaMaskWallet, useConnectedWallet } from "@/lib/wallet";
 
 export default function Profile() {
   const { user, refreshUser } = useAuth();
+  const { connectedAccount, isMismatch } = useConnectedWallet(user?.walletAddress);
 
   /* ── Wallet link flow ── */
   const [walletLinking, setWalletLinking] = useState(false);
@@ -28,37 +29,27 @@ export default function Profile() {
     setWalletSuccess(false);
 
     try {
-      // Step 1: get nonce
-      const nonceRes = await api.post<{ success: true; message: string }>("/auth/wallet/nonce");
-
-      // Step 2: sign with MetaMask
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ethereum = (window as any).ethereum;
-      if (!ethereum) throw new Error("MetaMask not found. Please install MetaMask.");
-
-      const accounts: string[] = await ethereum.request({ method: "eth_requestAccounts" });
-      const address = accounts[0];
-      if (!address) throw new Error("No wallet account selected.");
-
-      const signature: string = await ethereum.request({
-        method: "personal_sign",
-        params: [nonceRes.message, address],
-      });
-
-      // Step 3: submit signature
-      await api.patch("/auth/wallet", { walletAddress: address, signature });
-      await refreshUser();
+      await linkMetaMaskWallet(refreshUser);
       setWalletSuccess(true);
     } catch (err) {
-      setWalletError(err instanceof Error ? err.message : "Wallet link failed");
+      setWalletError(formatWalletError(err));
     } finally {
       setWalletLinking(false);
     }
   };
 
   const walletProps = user?.walletAddress
-    ? { linked: true as const, address: user.walletAddress }
-    : { linked: false as const };
+    ? {
+        linked: true as const,
+        address: user.walletAddress,
+        connectedAddress: connectedAccount,
+        mismatch: isMismatch,
+      }
+    : {
+        linked: false as const,
+        connectedAddress: connectedAccount,
+        mismatch: isMismatch,
+      };
 
   return (
     <PageContainer className="flex flex-col gap-8 pt-12">

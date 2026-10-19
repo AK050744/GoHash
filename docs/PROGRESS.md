@@ -15,6 +15,7 @@
 | **Sprint 4B** | `frontend/` (MetaMask integration & notary approval) | **Complete** | WalletContext, navbar wallet button, gas-free linking, notary queue & 5-step approval machine |
 | **Sprint 5A & 5B** | Full-stack (Verification API, admin management, certificate) | **Complete** | Public /api/verify, admin dashboard & notaries, on-chain addNotary/removeNotary, certificate export |
 | **Sprint 5C** | Full-stack (Metadata visibility controls) | **Next** | Public verification metadata visibility controls |
+| **Task F1** | `frontend/` (Notary/Admin access & on-chain authorize modal) | **Complete** | RoleRoute/403 fixes, wallet link flow on Requests & Review, Admin Notaries modal preconditions & stepper timing |
 | **Sprint 6A** | Backend (RBAC audit, security hardening, Zod validation) | **Complete** | RBAC matrix test (26 endpoints), Helmet, CORS pinned, rate limiting, JWT HS256 pinned, Zod schemas, typecheck 0 errors |
 | **Sprint 6B** | Docs (README, architecture, project-flow, VIVA, REQUIREMENTS_COVERAGE) | **Complete** | README.md rewritten; docs/architecture.md, docs/project-flow.md, docs/VIVA.md, docs/REQUIREMENTS_COVERAGE.md created |
 
@@ -385,3 +386,26 @@ If the Hardhat node was restarted or the contract redeployed, restart the backen
 3. Review the certificate layout showing the document name, ID, SHA-256 digest, notary wallet, block timestamp, transaction hash, and disclaimer.
 4. Click **Print / Save as PDF**.
 5. Observe in the print preview dialog that the top navbar, sidebar, buttons, and app layout controls are cleanly hidden, presenting a clean certificate suitable for archiving.
+
+---
+
+### Task F1 (Notary/Admin Access Fixes & On-Chain Authorize Modal)
+
+- **Diagnosed and Resolved Role Guarding Defect**:
+  - Pre-redesign shared routes (`/dashboard`, `/profile`, `/documents/:id`, `/upload`) were accessible to authenticated users across all roles, but the redesign erroneously wrapped them in `<RequireAuth role="USER">`.
+  - In `Login.tsx`, successful notary authentication triggered `navigate("/dashboard")`, bouncing notaries to the `/403` page.
+  - Resolved in `App.tsx` by introducing `DashboardRedirect` (routing `ADMIN` to `/admin/dashboard`, `NOTARY` to `/notary/dashboard`, and `USER` to `/dashboard`) and widening shared route access to `["USER", "NOTARY", "ADMIN"]`.
+- **403 Forbidden Page**:
+  - Displays signed-in role, required role(s), "Go to my dashboard" button routing dynamically based on role, and "Switch account" button.
+- **Notary Wallet Link Flow & Connected vs Linked Wallet Display**:
+  - On Notary Requests (`NotaryDashboard.tsx`) and Request Review (`RequestReview.tsx`), if the notary has no linked wallet, embedded the interactive wallet link flow instead of requiring manual profile navigation.
+  - Implemented `formatWalletError` mapping `WALLET_IN_USE` / `WALLET_ALREADY_LINKED` to: *"This wallet is linked to another GoHash account. In MetaMask select the notary account, then try again."*
+  - Added connected MetaMask account vs linked account display, emitting clear mismatch warnings when they differ.
+- **Admin On-Chain Notary Management (`/admin/notaries`)**:
+  - Authorize and Revoke buttons are enabled only for `NOTARY` accounts with a linked wallet; otherwise disabled with *"This notary must link a wallet first (Profile > Link wallet)."*
+  - Authorize is disabled when `onChainAuthorized === true`; Revoke is disabled when `false`.
+  - `ChainActionModal` runs all preconditions (MetaMask installed, target wallet valid, MetaMask connected, network check, contract owner check, current on-chain status) before stepper advances.
+  - Precondition failures show ONE error card (*"Cannot start: ..."*) and set Step 1 to FAILED with remaining steps NOT STARTED.
+  - Stepper timing strictly enforced: "Sign in wallet" is DONE only after MetaMask returns a transaction; "Record on-chain" is DONE only after mined; "Verify receipt" is DONE only after backend refresh.
+  - Eliminated duplicate error cards and prevented false "Transaction failed / Nothing was recorded" alerts when no transaction was sent.
+

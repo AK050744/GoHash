@@ -8,6 +8,7 @@ import { ListBody, type ListState } from "@/components/ui/list-body";
 import { PageHeader } from "@/components/ui/page-header";
 import { WalletStatusCard } from "@/components/wallet/wallet-status-card";
 import { api } from "@/lib/api";
+import { formatWalletError, linkMetaMaskWallet, useConnectedWallet } from "@/lib/wallet";
 import { useAuth } from "@/context/AuthContext";
 
 interface ApiNotarization {
@@ -21,12 +22,31 @@ interface ApiNotarization {
 }
 
 export default function NotaryDashboard() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [requestsState, setRequestsState] = useState<ListState<PendingRequest>>({
     status: "loading",
   });
 
+  const { connectedAccount, isMismatch } = useConnectedWallet(user?.walletAddress);
+  const [walletLinking, setWalletLinking] = useState(false);
+  const [walletError, setWalletError] = useState<string | null>(null);
+  const [walletSuccess, setWalletSuccess] = useState(false);
+
   const walletLinked = !!user?.walletAddress;
+
+  const handleLinkWallet = async () => {
+    setWalletLinking(true);
+    setWalletError(null);
+    setWalletSuccess(false);
+    try {
+      await linkMetaMaskWallet(refreshUser);
+      setWalletSuccess(true);
+    } catch (err) {
+      setWalletError(formatWalletError(err));
+    } finally {
+      setWalletLinking(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setRequestsState({ status: "loading" });
@@ -54,10 +74,6 @@ export default function NotaryDashboard() {
     void load();
   }, [load]);
 
-  const walletProps = user?.walletAddress
-    ? { linked: true as const, address: user.walletAddress }
-    : { linked: false as const };
-
   return (
     <PageContainer className="flex flex-col gap-8 pt-12">
       <PageHeader
@@ -66,11 +82,20 @@ export default function NotaryDashboard() {
         subtitle="Review documents waiting for notarization."
       />
 
-      <WalletStatusCard {...walletProps} />
+      <WalletStatusCard
+        linked={walletLinked}
+        address={user?.walletAddress ?? undefined}
+        connectedAddress={connectedAccount}
+        mismatch={isMismatch}
+        onLinkWallet={handleLinkWallet}
+        isLinking={walletLinking}
+        linkError={walletError}
+        linkSuccess={walletSuccess}
+      />
 
       {!walletLinked && (
         <p className="text-sm font-medium text-slate">
-          Link a wallet in your{" "}
+          Link a wallet above or in your{" "}
           <a href="/profile" className="font-bold text-navy underline">
             profile
           </a>{" "}

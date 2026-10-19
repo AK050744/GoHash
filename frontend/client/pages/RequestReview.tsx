@@ -19,6 +19,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
+import { formatWalletError, linkMetaMaskWallet, useConnectedWallet } from "@/lib/wallet";
 import { useAuth } from "@/context/AuthContext";
 
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
@@ -36,7 +37,8 @@ interface ApiNotarization {
 
 export default function RequestReview() {
   const { id = "" } = useParams();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
+  const { connectedAccount, isMismatch } = useConnectedWallet(user?.walletAddress);
 
   const [request, setRequest] = useState<PendingRequest | null>(null);
   const [documentId, setDocumentId] = useState<string>("");
@@ -52,7 +54,26 @@ export default function RequestReview() {
   const [receipt, setReceipt] = useState<RequestReceipt | null>(null);
   const [approvalError, setApprovalError] = useState<string | null>(null);
 
+  /* ── Inline wallet link state ── */
+  const [linkingWallet, setLinkingWallet] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkSuccess, setLinkSuccess] = useState(false);
+
   const walletLinked = !!user?.walletAddress;
+
+  const handleLinkWallet = async () => {
+    setLinkingWallet(true);
+    setLinkError(null);
+    setLinkSuccess(false);
+    try {
+      await linkMetaMaskWallet(refreshUser);
+      setLinkSuccess(true);
+    } catch (err) {
+      setLinkError(formatWalletError(err));
+    } finally {
+      setLinkingWallet(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -115,7 +136,7 @@ export default function RequestReview() {
       // Step 2: Invoke MetaMask transaction
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ethereum = (window as any).ethereum;
-      if (!ethereum) throw new Error("MetaMask not found. Please install MetaMask.");
+      if (!ethereum) throw new Error("MetaMask not found. Please install MetaMask to continue.");
 
       // Ensure network matches expected chain
       const currentChainId = await ethereum.request({ method: "eth_chainId" });
@@ -140,15 +161,13 @@ export default function RequestReview() {
         activeAccount.toLowerCase() !== user.walletAddress.toLowerCase()
       ) {
         throw new Error(
-          `MetaMask account mismatch: Active wallet (${activeAccount.slice(0, 8)}…) is not your registered notary wallet (${user.walletAddress.slice(0, 8)}…). Please switch to your notary account in MetaMask.`
+          "This wallet is linked to another GoHash account. In MetaMask select the notary account, then try again."
         );
       }
 
       // Encode the function call using ethers-compatible encoding
-      // The method is "notarize(bytes32 documentHash, string ipfsCid, address owner)"
       const [documentHash, ipfsCid, ownerAddress] = approveRes.args;
 
-      // ABI-encode using dynamic import to keep bundle small
       const { ethers } = await import("ethers");
       const iface = new ethers.Interface(approveRes.abi);
       const data = iface.encodeFunctionData(approveRes.method, [
@@ -214,6 +233,7 @@ export default function RequestReview() {
       const message = err instanceof Error ? err.message : "Approval failed";
       if (message.includes("user rejected") || message.toLowerCase().includes("denied")) {
         setApprovalState("rejected-by-user");
+        setApprovalError("Transaction was rejected in MetaMask.");
       } else {
         setApprovalState("failed");
         setApprovalError(message);
@@ -301,12 +321,31 @@ export default function RequestReview() {
       <Card className="flex flex-col gap-6 p-6 md:p-8">
         <h2 className="text-xl font-extrabold">Approval progress</h2>
 
-        <ApprovalProgress state={approvalState} receipt={receipt} />
+        <div className="rounded-card border-2 border-navy/20 bg-cream/40 p-4 text-xs flex flex-col gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-bold text-slate uppercase tracking-wider">
+              Linked Notary Wallet:
+            </span>
+            <span className="font-mono font-bold break-all">
+              {user?.walletAddress ?? "No wallet linked"}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-bold text-slate uppercase tracking-wider">
+              Connected MetaMask Account:
+            </span>
+            <span className="font-mono font-bold break-all">
+              {connectedAccount ?? "Not connected"}
+            </span>
+          </div>
+        </div>
 
-        {approvalError && (
-          <Alert variant="error">
-            <AlertTitle>Approval failed</AlertTitle>
-            <AlertDescription>{approvalError}</AlertDescription>
+        {isMismatch && (
+          <Alert variant="warning">
+            <AlertTitle>Wallet mismatch</AlertTitle>
+            <AlertDescription>
+              The connected wallet ({connectedAccount}) does not match your linked notary wallet ({user?.walletAddress}). In MetaMask select the notary account, then try again.
+            </AlertDescription>
           </Alert>
         )}
 
@@ -314,13 +353,33 @@ export default function RequestReview() {
           <Alert variant="warning">
             <AlertTitle>Wallet not linked</AlertTitle>
             <AlertDescription className="flex flex-col items-start gap-3">
-              <span>Link a wallet before you approve requests.</span>
-              <Button asChild variant="outline" size="sm">
-                <Link to="/profile">Open profile</Link>
+              <span>Link your notary wallet before you can approve requests.</span>
+              {linkError && (
+                <p className="font-bold text-danger">{linkError}</p>
+              )}
+              {linkSuccess && (
+                <p className="font-bold text-green-700">Wallet linked successfully!</p>
+              )}
+              <Button
+                type="button"
+                variant="teal"
+                size="sm"
+                loading={linkingWallet}
+                disabled={linkingWallet || linkSuccess}
+                onClick={handleLinkWallet}
+              >
+                Connect &amp; Link MetaMask
               </Button>
             </AlertDescription>
           </Alert>
         )}
+
+        <ApprovalProgress
+          state={approvalState}
+          receipt={receipt}
+          error={approvalError}
+          errorVariant={approvalState === "rejected-by-user" ? "warning" : "error"}
+        />
 
         <div className="flex flex-wrap gap-3">
           <Button
@@ -340,6 +399,7 @@ export default function RequestReview() {
             )}
             disabled={
               !walletLinked ||
+              isMismatch ||
               approvalState === "confirmed" ||
               ["preparing", "awaiting-wallet", "pending", "verifying"].includes(
                 approvalState,

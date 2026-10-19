@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { AppBackground } from "@/components/layout/app-background";
 import { AppLayout, PublicLayout } from "@/components/layout/site-layout";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
@@ -44,11 +44,24 @@ function RequireAuth({
   children: JSX.Element;
 }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
   if (loading) return null; // or a spinner
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
   if (role) {
     const allowed = Array.isArray(role) ? role : [role];
-    if (!allowed.includes(user.role)) return <Navigate to="/403" replace />;
+    if (!allowed.includes(user.role)) {
+      return (
+        <Navigate
+          to="/403"
+          state={{
+            requiredRoles: allowed,
+            currentRole: user.role,
+            from: location.pathname,
+          }}
+          replace
+        />
+      );
+    }
   }
   return children;
 }

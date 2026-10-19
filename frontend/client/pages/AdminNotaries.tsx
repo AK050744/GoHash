@@ -144,6 +144,7 @@ export default function AdminNotaries() {
             <UsersTable
               users={visible}
               currentUserId={currentUser?.id ?? null}
+              onChanged={load}
             />
           );
         }}
