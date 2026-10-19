@@ -153,6 +153,43 @@ export const changeUserStatus = asyncHandler(async (req: Request, res: Response)
   sendSuccess(res, { user: safeUser(user) }, 200)
 })
 
+// ─── PATCH /api/admin/users/:id/wallet ───────────────────────────────────────
+
+/**
+ * PATCH /api/admin/users/:id/wallet
+ * Body: { walletAddress: string }
+ *
+ * Allows an admin to link/update a user's Ethereum wallet address directly.
+ */
+export const updateUserWallet = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+  const { walletAddress } = req.body
+
+  if (!walletAddress || typeof walletAddress !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+    throw ApiError.badRequest('Valid Ethereum wallet address required (0x...)', 'VALIDATION_ERROR')
+  }
+
+  const normalized = walletAddress.toLowerCase()
+
+  // Check if wallet is already used by another user
+  const existing = await User.findOne({ walletAddress: normalized, _id: { $ne: id } })
+  if (existing) {
+    throw new ApiError(409, 'WALLET_ALREADY_LINKED', 'This wallet address is already linked to another user account.')
+  }
+
+  const user = await User.findByIdAndUpdate(
+    id,
+    { walletAddress: normalized },
+    { new: true, select: '-passwordHash -walletNonce -walletNonceExpiry' }
+  ).lean()
+
+  if (!user) {
+    throw ApiError.notFound('User not found', 'NOT_FOUND')
+  }
+
+  sendSuccess(res, { user: safeUser(user) }, 200)
+})
+
 // ─── GET /api/admin/notaries ──────────────────────────────────────────────────
 
 /**

@@ -44,7 +44,7 @@ interface RegisterPayload {
 interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
-  login: (payload: LoginPayload) => Promise<void>;
+  login: (payload: LoginPayload) => Promise<AuthUser>;
   register: (payload: RegisterPayload) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -87,13 +87,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void fetchMe();
   }, [fetchMe]);
 
-  const login = useCallback(async (payload: LoginPayload) => {
+  const login = useCallback(async (payload: LoginPayload): Promise<AuthUser> => {
     const data = await api.post<{ success: true; token: string; user: AuthUser }>(
       "/auth/login",
       payload,
     );
     saveToken(data.token);
     setUser(data.user);
+    return data.user;
   }, []);
 
   const register = useCallback(async (payload: RegisterPayload) => {

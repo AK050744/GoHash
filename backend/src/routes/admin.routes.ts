@@ -9,6 +9,7 @@ import {
   listUsers,
   changeUserRole,
   changeUserStatus,
+  updateUserWallet,
   listNotaries,
   getActivity,
   getStats,
@@ -18,6 +19,7 @@ import {
   adminUserIdParamSchema,
   changeRoleSchema,
   changeStatusSchema,
+  updateWalletSchema,
 } from '../validations/admin.validation'
 
 const router = Router()
@@ -28,6 +30,7 @@ router.use(requireAuth, requireRole('ADMIN'))
 router.get('/users',              validate(listUsersQuerySchema, 'query'), listUsers)
 router.patch('/users/:id/role',   validate(adminUserIdParamSchema, 'params'), validateBody(changeRoleSchema), changeUserRole)
 router.patch('/users/:id/status', validate(adminUserIdParamSchema, 'params'), validateBody(changeStatusSchema), changeUserStatus)
+router.patch('/users/:id/wallet', validate(adminUserIdParamSchema, 'params'), validateBody(updateWalletSchema), updateUserWallet)
 router.get('/notaries',           listNotaries)
 router.get('/activity',           getActivity)
 router.get('/stats',              getStats)

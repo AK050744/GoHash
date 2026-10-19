@@ -1,9 +1,10 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { ApprovalProgress } from "@/components/notary/approval-progress";
 import type { AccountStatus, ManagedUser, ApprovalState } from "@/components/notary/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import {
@@ -136,11 +137,33 @@ interface ChainActionModalProps {
 function ChainActionModal({ user, action, open, onOpenChange, onSaved }: ChainActionModalProps) {
   const [approvalState, setApprovalState] = useState<ApprovalState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [walletInput, setWalletInput] = useState(user.walletAddress ?? "");
+
+  useEffect(() => {
+    setWalletInput(user.walletAddress ?? "");
+    setError(null);
+    setApprovalState("idle");
+  }, [user.walletAddress, open]);
+
+  const targetAddress = (user.walletAddress || walletInput).trim();
 
   const handleAction = async () => {
     setApprovalState("preparing");
     setError(null);
     try {
+      if (!targetAddress || !/^0x[a-fA-F0-9]{40}$/.test(targetAddress)) {
+        throw new Error(
+          "A valid Ethereum wallet address (0x followed by 40 hex characters) is required."
+        );
+      }
+
+      // If user had no wallet linked, save it via the admin API
+      if (!user.walletAddress) {
+        await api.patch(`/admin/users/${user.id}/wallet`, {
+          walletAddress: targetAddress,
+        });
+      }
+
       // Get contract info
       const contractRes = await api.get<{
         success: true;
@@ -155,14 +178,10 @@ function ChainActionModal({ user, action, open, onOpenChange, onSaved }: ChainAc
       const ethereum = (window as any).ethereum;
       if (!ethereum) throw new Error("MetaMask not found.");
 
-      if (!user.walletAddress) {
-        throw new Error("This user has not linked a wallet address yet. Only users with a linked wallet can be authorized or revoked on-chain.");
-      }
-
       const { ethers } = await import("ethers");
       const iface = new ethers.Interface(contractRes.abi);
       const methodName = action === "Authorize" ? "addNotary" : "removeNotary";
-      const data = iface.encodeFunctionData(methodName, [user.walletAddress]);
+      const data = iface.encodeFunctionData(methodName, [targetAddress]);
 
       const accounts: string[] = await ethereum.request({ method: "eth_requestAccounts" });
       await ethereum.request({
@@ -195,6 +214,37 @@ function ChainActionModal({ user, action, open, onOpenChange, onSaved }: ChainAc
     >
       <div className="flex flex-col gap-6">
         <ApprovalProgress state={approvalState} />
+
+        {!user.walletAddress && action === "Authorize" && (
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="chain-wallet-input">Notary Wallet Address</Label>
+            <Input
+              id="chain-wallet-input"
+              placeholder="0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+              value={walletInput}
+              onChange={(e) => setWalletInput(e.target.value)}
+            />
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate">
+              <span>This address will be linked to the notary and authorized on-chain.</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setWalletInput("0x70997970C51812dc3A010C7d01b50e0d17dc79C8")}
+              >
+                Use Hardhat Account #1
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {user.walletAddress && (
+          <div className="rounded-card border-2 border-navy/20 bg-cream/40 p-3 text-xs">
+            <span className="font-bold text-slate">Target wallet: </span>
+            <span className="font-mono font-bold break-all">{user.walletAddress}</span>
+          </div>
+        )}
 
         {error && (
           <Alert variant="error">

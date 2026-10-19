@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { Wallet } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -45,7 +46,7 @@ function WalletStatusCard({
           <dt className="text-xs font-bold tracking-[0.12em] text-slate uppercase">
             Network
           </dt>
-          <dd className="font-bold">{network ?? "—"}</dd>
+          <dd className="font-bold">{network ?? "Hardhat Local"}</dd>
         </div>
       </dl>
 
@@ -60,8 +61,10 @@ function WalletStatusCard({
       )}
 
       <div>
-        <Button variant="outline" disabled>
-          Link wallet
+        <Button asChild variant={linked ? "outline" : "primary"}>
+          <Link to="/profile">
+            {linked ? "Manage wallet" : "Link wallet in profile"}
+          </Link>
         </Button>
       </div>
     </Card>

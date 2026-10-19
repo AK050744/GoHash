@@ -25,8 +25,14 @@ export default function Login() {
     setError(null);
     setLoading(true);
     try {
-      await login({ email, password });
-      navigate("/dashboard", { replace: true });
+      const loggedUser = await login({ email, password });
+      if (loggedUser.role === "ADMIN") {
+        navigate("/admin/dashboard", { replace: true });
+      } else if (loggedUser.role === "NOTARY") {
+        navigate("/notary/dashboard", { replace: true });
+      } else {
+        navigate("/dashboard", { replace: true });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

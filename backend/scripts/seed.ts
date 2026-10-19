@@ -10,6 +10,7 @@ interface SeedUserSpec {
   email: string
   password: string
   role: UserRole
+  walletAddress?: string
 }
 
 const seedUsers: SeedUserSpec[] = [
@@ -18,12 +19,14 @@ const seedUsers: SeedUserSpec[] = [
     email: env.SEED_ADMIN_EMAIL.toLowerCase(),
     password: env.SEED_ADMIN_PASSWORD,
     role: 'ADMIN',
+    walletAddress: '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266',
   },
   {
     name: env.SEED_NOTARY_NAME,
     email: env.SEED_NOTARY_EMAIL.toLowerCase(),
     password: env.SEED_NOTARY_PASSWORD,
     role: 'NOTARY',
+    walletAddress: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
   },
 ]
 
@@ -39,6 +42,9 @@ async function seed() {
       existing.role = spec.role
       existing.isActive = true
       existing.name = spec.name
+      if (spec.walletAddress && !existing.walletAddress) {
+        existing.walletAddress = spec.walletAddress
+      }
       // Update password hash to guarantee match with seed env
       existing.passwordHash = await bcrypt.hash(spec.password, BCRYPT_SALT_ROUNDS)
       await existing.save()
@@ -51,6 +57,7 @@ async function seed() {
         passwordHash,
         role: spec.role,
         isActive: true,
+        walletAddress: spec.walletAddress,
       })
       console.log(`✅ Created seeded ${spec.role} user: ${spec.email}`)
     }

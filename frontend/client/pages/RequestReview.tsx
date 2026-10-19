@@ -117,8 +117,34 @@ export default function RequestReview() {
       const ethereum = (window as any).ethereum;
       if (!ethereum) throw new Error("MetaMask not found. Please install MetaMask.");
 
+      // Ensure network matches expected chain
+      const currentChainId = await ethereum.request({ method: "eth_chainId" });
+      const expectedHexChainId = "0x" + Number(approveRes.chainId).toString(16);
+      if (currentChainId !== expectedHexChainId) {
+        try {
+          await ethereum.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: expectedHexChainId }],
+          });
+        } catch (switchErr) {
+          console.warn("Could not auto-switch network:", switchErr);
+        }
+      }
+
+      const accounts: string[] = await ethereum.request({ method: "eth_requestAccounts" });
+      const activeAccount = accounts[0];
+      if (!activeAccount) throw new Error("No active account found in MetaMask.");
+
+      if (
+        user?.walletAddress &&
+        activeAccount.toLowerCase() !== user.walletAddress.toLowerCase()
+      ) {
+        throw new Error(
+          `MetaMask account mismatch: Active wallet (${activeAccount.slice(0, 8)}…) is not your registered notary wallet (${user.walletAddress.slice(0, 8)}…). Please switch to your notary account in MetaMask.`
+        );
+      }
+
       // Encode the function call using ethers-compatible encoding
-      // We call the contract directly via eth_sendTransaction
       // The method is "notarize(bytes32 documentHash, string ipfsCid, address owner)"
       const [documentHash, ipfsCid, ownerAddress] = approveRes.args;
 
@@ -135,7 +161,7 @@ export default function RequestReview() {
         method: "eth_sendTransaction",
         params: [
           {
-            from: user?.walletAddress,
+            from: activeAccount,
             to: approveRes.contractAddress,
             data,
           },

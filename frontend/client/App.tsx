@@ -53,6 +53,13 @@ function RequireAuth({
   return children;
 }
 
+function DashboardRedirect() {
+  const { user } = useAuth();
+  if (user?.role === "ADMIN") return <Navigate to="/admin/dashboard" replace />;
+  if (user?.role === "NOTARY") return <Navigate to="/notary/dashboard" replace />;
+  return <Dashboard />;
+}
+
 function AppRoutes() {
   const { user, loading } = useAuth();
   // Derive nav role from the authenticated user (undefined = public)
@@ -98,8 +105,8 @@ function AppRoutes() {
         <Route
           path="/dashboard"
           element={
-            <RequireAuth role="USER">
-              <Dashboard />
+            <RequireAuth role={["USER", "NOTARY", "ADMIN"]}>
+              <DashboardRedirect />
             </RequireAuth>
           }
         />

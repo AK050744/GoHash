@@ -17,3 +17,7 @@ export const changeRoleSchema = z.object({
 export const changeStatusSchema = z.object({
   isActive: z.boolean(),
 })
+
+export const updateWalletSchema = z.object({
+  walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum wallet address'),
+})
