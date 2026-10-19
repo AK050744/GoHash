@@ -1,0 +1,193 @@
+import { useState } from "react";
+import { Link, NavLink } from "react-router-dom";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { LogOut, Menu, X } from "lucide-react";
+
+import { BrandMark } from "@/components/layout/brand-mark";
+import { WalletPill } from "@/components/layout/wallet-pill";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
+
+export type AppRole = "USER" | "NOTARY" | "ADMIN";
+
+interface NavItem {
+  to: string;
+  label: string;
+}
+
+const roleNavItems: Record<AppRole, NavItem[]> = {
+  USER: [
+    { to: "/dashboard", label: "Dashboard" },
+    { to: "/upload", label: "Upload" },
+    { to: "/my-documents", label: "My Documents" },
+    { to: "/verify", label: "Verify" },
+    { to: "/profile", label: "Profile" },
+  ],
+  NOTARY: [
+    { to: "/notary/dashboard", label: "Requests" },
+    { to: "/verify", label: "Verify" },
+    { to: "/profile", label: "Profile" },
+  ],
+  ADMIN: [
+    { to: "/admin/dashboard", label: "Dashboard" },
+    { to: "/admin/notaries", label: "Notaries" },
+    { to: "/verify", label: "Verify" },
+    { to: "/profile", label: "Profile" },
+  ],
+};
+
+const publicNavItems: NavItem[] = [{ to: "/verify", label: "Verify" }];
+
+const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+  cn(
+    "inline-flex min-h-11 items-center rounded-full border-[2.5px] px-3 text-sm font-bold whitespace-nowrap text-navy transition-colors duration-150",
+    isActive ? "border-navy bg-yellow" : "border-transparent hover:bg-cream",
+  );
+
+interface AccountActionsProps {
+  role?: AppRole;
+  onNavigate?: () => void;
+}
+
+function AccountActions({ role, onNavigate }: AccountActionsProps) {
+  const { user, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    if (onNavigate) onNavigate();
+    window.location.href = "/login";
+  };
+
+  if (role) {
+    return (
+      <>
+        <WalletPill
+          status={user?.walletAddress ? "connected" : "disconnected"}
+          address={user?.walletAddress ?? undefined}
+        />
+        <Badge variant="teal">{role}</Badge>
+        <Button variant="outline" size="sm" icon={<LogOut />} onClick={handleLogout}>
+          Logout
+        </Button>
+      </>
+    );
+  }
+  return (
+    <>
+      <Button asChild variant="outline" size="sm">
+        <Link to="/login" onClick={onNavigate}>
+          Login
+        </Link>
+      </Button>
+      <Button asChild variant="primary" size="sm">
+        <Link to="/register" onClick={onNavigate}>
+          Register
+        </Link>
+      </Button>
+    </>
+  );
+}
+
+export interface SiteNavProps {
+  role?: AppRole;
+}
+
+function SiteNav({ role }: SiteNavProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const items = role ? roleNavItems[role] : publicNavItems;
+  const closeMenu = () => setMenuOpen(false);
+
+  return (
+    <header className="sticky top-0 z-40 px-4 pt-4 print:hidden">
+      <div className="brut-border shadow-hard-sm mx-auto flex h-16 max-w-[1100px] items-center justify-between gap-4 rounded-full bg-white py-2 pr-2 pl-4">
+        <Link
+          to="/"
+          aria-label="GoHash home"
+          className="flex min-h-11 items-center gap-2.5 rounded-full"
+        >
+          <BrandMark />
+          <span className="text-xl font-extrabold tracking-tight text-navy">
+            Go
+            <span className="ml-0.5 rounded-lg bg-navy px-1.5 text-yellow">
+              Hash
+            </span>
+          </span>
+        </Link>
+
+        <nav
+          aria-label="Main"
+          className="hidden items-center gap-1 xl:flex"
+        >
+          {items.map((item) => (
+            <NavLink key={item.to} to={item.to} className={navLinkClass}>
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="hidden items-center gap-2 xl:flex">
+          <AccountActions role={role} />
+        </div>
+
+        <DialogPrimitive.Root open={menuOpen} onOpenChange={setMenuOpen}>
+          <DialogPrimitive.Trigger asChild>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Open menu"
+              className="xl:hidden"
+            >
+              <Menu aria-hidden="true" />
+            </Button>
+          </DialogPrimitive.Trigger>
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-navy/50 xl:hidden" />
+            <DialogPrimitive.Content
+              aria-describedby={undefined}
+              className="brut-border shadow-hard fixed inset-x-4 top-4 z-50 flex max-h-[calc(100dvh-2rem)] flex-col gap-5 overflow-y-auto rounded-card bg-white p-4 xl:hidden"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <DialogPrimitive.Title className="flex items-center gap-2.5 text-xl font-extrabold tracking-tight text-navy">
+                  <BrandMark />
+                  Go
+                  <span className="rounded-lg bg-navy px-1.5 text-yellow">
+                    Hash
+                  </span>
+                </DialogPrimitive.Title>
+                <DialogPrimitive.Close
+                  aria-label="Close menu"
+                  className="brut-border brut-raise flex size-11 items-center justify-center rounded-full bg-white"
+                >
+                  <X className="size-5" aria-hidden="true" />
+                </DialogPrimitive.Close>
+              </div>
+
+              <nav aria-label="Main mobile" className="flex flex-col gap-2">
+                {items.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    onClick={closeMenu}
+                    className={(state) =>
+                      cn(navLinkClass(state), "justify-start text-base")
+                    }
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </nav>
+
+              <div className="flex flex-col gap-3 border-t-[2.5px] border-navy pt-5">
+                <AccountActions role={role} onNavigate={closeMenu} />
+              </div>
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
+      </div>
+    </header>
+  );
+}
+
+export { SiteNav };

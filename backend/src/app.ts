@@ -13,7 +13,24 @@ const app: Application = express()
 app.use(helmet())
 
 // ─── Cross-Origin Resource Sharing ───────────────────────────────────────────
-app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }))
+const allowedOrigins = env.CORS_ORIGIN.split(',').map((o) => o.trim())
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
+      if (!origin) return callback(null, true)
+      if (
+        allowedOrigins.includes(origin) ||
+        allowedOrigins.includes('*') ||
+        (env.NODE_ENV === 'development' && /^http:\/\/localhost:\d+$/.test(origin))
+      ) {
+        return callback(null, true)
+      }
+      return callback(new Error(`CORS origin not allowed: ${origin}`))
+    },
+    credentials: true,
+  }),
+)
 
 // ─── Request Body Parsers ────────────────────────────────────────────────────
 const jsonBodyLimit = '1mb'
