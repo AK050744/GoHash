@@ -84,7 +84,7 @@ export class BlockchainService {
       return {
         address: deployment.address,
         chainId: deployment.chainId,
-        abi: NOTARY_ABI,
+        abi: FULL_NOTARY_ABI,
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)

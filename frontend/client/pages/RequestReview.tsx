@@ -202,8 +202,16 @@ export default function RequestReview() {
       const [documentHash, ipfsCid, ownerAddress] = approveRes.args;
 
       const { ethers } = await import("ethers");
-      const iface = new ethers.Interface(approveRes.abi);
-      const data = iface.encodeFunctionData(approveRes.method, [
+      const fullAbi =
+        Array.isArray(approveRes.abi) &&
+        approveRes.abi.some((item) => typeof item === "string" && item.includes("notarize("))
+          ? approveRes.abi
+          : [
+              ...(approveRes.abi || []),
+              "function notarize(bytes32 documentHash, string calldata ipfsCid, address owner) external",
+            ];
+      const iface = new ethers.Interface(fullAbi);
+      const data = iface.encodeFunctionData(approveRes.method || "notarize", [
         documentHash,
         ipfsCid ?? "",
         ownerAddress,
