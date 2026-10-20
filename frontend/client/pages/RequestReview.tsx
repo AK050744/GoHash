@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Check, ClipboardCheck, ExternalLink, X } from "lucide-react";
+import { ArrowLeft, Check, ClipboardCheck, ExternalLink, FileText, ScrollText, X } from "lucide-react";
 
 import { PageContainer } from "@/components/layout/page-container";
 import { ApprovalProgress } from "@/components/notary/approval-progress";
@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { FeeConfig, getFeeConfig } from "@/lib/fees";
@@ -33,6 +34,10 @@ interface ApiNotarization {
   documentHash: string;
   status: string;
   createdAt: string;
+  transactionHash?: string | null;
+  blockNumber?: number | null;
+  contractAddress?: string | null;
+  notarizationKey?: string | null;
   document: { id: string; originalName: string; sha256Hash: string };
   owner: { name: string };
   payment?: {
@@ -103,9 +108,20 @@ export default function RequestReview() {
         hash: n.documentHash,
         ownerName: n.owner.name,
         requestedAt: new Date(n.createdAt).toLocaleDateString(),
+        status: n.status,
         payment: n.payment ?? null,
       });
       setDocumentId(n.document.id);
+
+      if (n.status === "CONFIRMED") {
+        setApprovalState("confirmed");
+        setReceipt({
+          transactionHash: n.transactionHash ?? "",
+          blockNumber: n.blockNumber !== undefined && n.blockNumber !== null ? String(n.blockNumber) : "",
+          contractAddress: n.contractAddress ?? "",
+          notarizationKey: n.notarizationKey ?? undefined,
+        });
+      }
 
       // Estimate notarization gas
       try {
@@ -261,6 +277,7 @@ export default function RequestReview() {
               notarizationKey: confirmRes.notarization.notarizationKey,
             });
             setApprovalState("confirmed");
+            setRequest((prev) => (prev ? { ...prev, status: "CONFIRMED" } : prev));
             confirmed = true;
           }
         } catch {
@@ -316,12 +333,25 @@ export default function RequestReview() {
         title={request?.documentName ?? "Request review"}
         subtitle={`Request ${id}`}
         actions={
-          <Button asChild variant="outline">
-            <Link to="/notary/dashboard">
-              <ArrowLeft aria-hidden="true" />
-              Back to requests
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <StatusBadge
+              status={
+                approvalState === "confirmed" || request?.status === "CONFIRMED"
+                  ? "NOTARIZED"
+                  : request?.status === "REJECTED"
+                    ? "REJECTED"
+                    : request?.status === "APPROVED"
+                      ? "APPROVED"
+                      : "PENDING"
+              }
+            />
+            <Button asChild variant="outline">
+              <Link to="/notary/dashboard">
+                <ArrowLeft aria-hidden="true" />
+                Back to requests
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -456,6 +486,48 @@ export default function RequestReview() {
         />
 
         {(() => {
+          if (approvalState === "confirmed" || request?.status === "CONFIRMED") {
+            return (
+              <div className="flex flex-col gap-4">
+                <Alert variant="success">
+                  <AlertTitle>Notarization Confirmed on Blockchain</AlertTitle>
+                  <AlertDescription>
+                    This document has been successfully notarized on-chain with unique key{" "}
+                    <span className="font-mono font-bold">
+                      {receipt?.notarizationKey ?? "generated"}
+                    </span>
+                    . The document owner can now view and verify it in their account.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button asChild size="lg" variant="primary">
+                    <Link to="/notary/dashboard">
+                      <ArrowLeft aria-hidden="true" />
+                      Back to Notary Queue
+                    </Link>
+                  </Button>
+                  {documentId && (
+                    <Button asChild size="lg" variant="outline">
+                      <Link to={`/documents/${documentId}`}>
+                        <FileText aria-hidden="true" />
+                        View Document Details
+                      </Link>
+                    </Button>
+                  )}
+                  {documentId && (
+                    <Button asChild size="lg" variant="teal">
+                      <Link to={`/documents/${documentId}/certificate`}>
+                        <ScrollText aria-hidden="true" />
+                        View Certificate
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
           const isPaid = request?.payment?.status === "PAID";
           const waitingForPayment = feeConfig.enabled && !isPaid;
 
@@ -466,7 +538,6 @@ export default function RequestReview() {
                 size="lg"
                 icon={<X />}
                 onClick={() => setRejectOpen(true)}
-                disabled={approvalState === "confirmed"}
               >
                 Reject
               </Button>
@@ -480,14 +551,13 @@ export default function RequestReview() {
                   !walletLinked ||
                   isMismatch ||
                   waitingForPayment ||
-                  approvalState === "confirmed" ||
                   ["preparing", "awaiting-wallet", "pending", "verifying"].includes(
                     approvalState,
                   )
                 }
                 onClick={handleApprove}
               >
-                Approve
+                Approve & Notarize
               </Button>
               {waitingForPayment && (
                 <span className="text-xs font-semibold text-danger">

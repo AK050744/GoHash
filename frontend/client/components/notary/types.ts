@@ -14,6 +14,7 @@ export interface PendingRequest {
   ownerName: string;
   hash: string;
   requestedAt: string;
+  status?: string;
   payment?: {
     status: string;
     amountWei?: string;
