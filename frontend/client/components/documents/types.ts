@@ -8,6 +8,14 @@ export interface DocumentSummary {
   createdAt: string;
 }
 
+export interface DocumentPayment {
+  status: string;
+  amountWei?: string;
+  transactionHash?: string;
+  paidAt?: string;
+  refundDue?: boolean;
+}
+
 export interface DocumentDetail extends DocumentSummary {
   notary?: string;
   recordedAt?: string;
@@ -15,4 +23,8 @@ export interface DocumentDetail extends DocumentSummary {
   blockNumber?: string;
   contractAddress?: string;
   notarizationKey?: string;
+  notarizationId?: string;
+  notarizationStatus?: string;
+  rejectionReason?: string | null;
+  payment?: DocumentPayment | null;
 }

@@ -11,6 +11,7 @@ import type {
 } from "@/components/notary/types";
 import { HashBlock } from "@/components/documents/hash-block";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -19,6 +20,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
+import { FeeConfig, getFeeConfig } from "@/lib/fees";
 import { formatWalletError, linkMetaMaskWallet, useConnectedWallet } from "@/lib/wallet";
 import { useAuth } from "@/context/AuthContext";
 
@@ -33,6 +35,12 @@ interface ApiNotarization {
   createdAt: string;
   document: { id: string; originalName: string; sha256Hash: string };
   owner: { name: string };
+  payment?: {
+    status: string;
+    amountWei?: string;
+    transactionHash?: string;
+    refundDue?: boolean;
+  } | null;
 }
 
 export default function RequestReview() {
@@ -41,9 +49,11 @@ export default function RequestReview() {
   const { connectedAccount, isMismatch } = useConnectedWallet(user?.walletAddress);
 
   const [request, setRequest] = useState<PendingRequest | null>(null);
+  const [feeConfig, setFeeConfig] = useState<FeeConfig>({ enabled: false });
   const [documentId, setDocumentId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [estimatedGas, setEstimatedGas] = useState<string>("~0.000075 ETH");
 
   const [rejectOpen, setRejectOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -79,9 +89,13 @@ export default function RequestReview() {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await api.get<{ success: true; notarization: ApiNotarization }>(
-        `/notarization/${id}`,
-      );
+      const [res, fees] = await Promise.all([
+        api.get<{ success: true; notarization: ApiNotarization }>(
+          `/notarization/${id}`,
+        ),
+        getFeeConfig(),
+      ]);
+      setFeeConfig(fees);
       const n = res.notarization;
       setRequest({
         id: n.id,
@@ -89,8 +103,27 @@ export default function RequestReview() {
         hash: n.documentHash,
         ownerName: n.owner.name,
         requestedAt: new Date(n.createdAt).toLocaleDateString(),
+        payment: n.payment ?? null,
       });
       setDocumentId(n.document.id);
+
+      // Estimate notarization gas
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ethereum = (window as any).ethereum;
+        if (ethereum) {
+          const { ethers } = await import("ethers");
+          const provider = new ethers.BrowserProvider(ethereum);
+          const feeData = await provider.getFeeData();
+          const gasUnits = 75000n;
+          const price = feeData.gasPrice ?? 1000000000n;
+          const wei = gasUnits * price;
+          const ethVal = ethers.formatEther(wei);
+          setEstimatedGas(`~${parseFloat(ethVal).toFixed(6)} ETH`);
+        }
+      } catch {
+        setEstimatedGas("~0.000075 ETH");
+      }
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Failed to load request");
     } finally {
@@ -231,7 +264,17 @@ export default function RequestReview() {
         setApprovalState("failed");
         setApprovalError("Transaction timed out. Check your wallet for status.");
       }
-    } catch (err) {
+    } catch (err: unknown) {
+      const errObj = err as { code?: string; status?: number; message?: string };
+      if (
+        errObj?.code === "PAYMENT_REQUIRED" ||
+        errObj?.status === 402 ||
+        errObj?.message?.includes("PAYMENT_REQUIRED")
+      ) {
+        setApprovalState("failed");
+        setApprovalError("A notarization fee is required before this request can be approved.");
+        return;
+      }
       const message = err instanceof Error ? err.message : "Approval failed";
       if (message.includes("user rejected") || message.toLowerCase().includes("denied")) {
         setApprovalState("rejected-by-user");
@@ -306,6 +349,18 @@ export default function RequestReview() {
             </dt>
             <dd className="font-bold">{request?.requestedAt ?? "—"}</dd>
           </div>
+          {feeConfig.enabled && (
+            <div className="flex flex-col gap-1 sm:col-span-2">
+              <dt className="text-xs font-bold tracking-[0.12em] text-slate uppercase">
+                Payment Status
+              </dt>
+              <dd>
+                <Badge variant={request?.payment?.status === "PAID" ? "success" : "default"}>
+                  {request?.payment?.status === "PAID" ? "Paid" : "Unpaid"}
+                </Badge>
+              </dd>
+            </div>
+          )}
         </dl>
 
         <div>
@@ -340,6 +395,15 @@ export default function RequestReview() {
               {connectedAccount ?? "Not connected"}
             </span>
           </div>
+        </div>
+
+        <div className="rounded-card border-2 border-navy/20 bg-cream/40 p-4 text-xs flex flex-wrap items-center justify-between gap-2">
+          <span className="font-bold uppercase tracking-wider text-slate">
+            Estimated Notarization Gas:
+          </span>
+          <span className="font-mono font-bold text-navy">
+            {estimatedGas} <span className="font-medium text-slate">(estimate)</span>
+          </span>
         </div>
 
         {isMismatch && (
@@ -383,35 +447,48 @@ export default function RequestReview() {
           errorVariant={approvalState === "rejected-by-user" ? "warning" : "error"}
         />
 
-        <div className="flex flex-wrap gap-3">
-          <Button
-            variant="danger"
-            size="lg"
-            icon={<X />}
-            onClick={() => setRejectOpen(true)}
-            disabled={approvalState === "confirmed"}
-          >
-            Reject
-          </Button>
-          <Button
-            size="lg"
-            icon={<Check />}
-            loading={["preparing", "awaiting-wallet", "pending", "verifying"].includes(
-              approvalState,
-            )}
-            disabled={
-              !walletLinked ||
-              isMismatch ||
-              approvalState === "confirmed" ||
-              ["preparing", "awaiting-wallet", "pending", "verifying"].includes(
-                approvalState,
-              )
-            }
-            onClick={handleApprove}
-          >
-            Approve
-          </Button>
-        </div>
+        {(() => {
+          const isPaid = request?.payment?.status === "PAID";
+          const waitingForPayment = feeConfig.enabled && !isPaid;
+
+          return (
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="danger"
+                size="lg"
+                icon={<X />}
+                onClick={() => setRejectOpen(true)}
+                disabled={approvalState === "confirmed"}
+              >
+                Reject
+              </Button>
+              <Button
+                size="lg"
+                icon={<Check />}
+                loading={["preparing", "awaiting-wallet", "pending", "verifying"].includes(
+                  approvalState,
+                )}
+                disabled={
+                  !walletLinked ||
+                  isMismatch ||
+                  waitingForPayment ||
+                  approvalState === "confirmed" ||
+                  ["preparing", "awaiting-wallet", "pending", "verifying"].includes(
+                    approvalState,
+                  )
+                }
+                onClick={handleApprove}
+              >
+                Approve
+              </Button>
+              {waitingForPayment && (
+                <span className="text-xs font-semibold text-danger">
+                  Waiting for the user's fee payment
+                </span>
+              )}
+            </div>
+          );
+        })()}
       </Card>
 
       <Modal

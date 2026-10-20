@@ -14,6 +14,12 @@ export interface PendingRequest {
   ownerName: string;
   hash: string;
   requestedAt: string;
+  payment?: {
+    status: string;
+    amountWei?: string;
+    transactionHash?: string;
+    refundDue?: boolean;
+  } | null;
 }
 
 export interface RequestReceipt {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { FileText, LayoutDashboard, ShieldCheck, Users } from "lucide-react";
+import { Coins, FileText, LayoutDashboard, ShieldCheck, Users } from "lucide-react";
 
 import { ActivityTable } from "@/components/admin/activity-table";
 import { PageContainer } from "@/components/layout/page-container";
@@ -14,6 +14,10 @@ interface AdminStats {
   totalUsers: number;
   totalNotaries: number;
   totalNotarized: number;
+  fees?: {
+    paidCount: number;
+    totalEth: string;
+  };
 }
 
 interface ApiActivity {
@@ -48,6 +52,13 @@ export default function AdminDashboard() {
           notaries?: { total: number } | number;
           documents?: { total: number; byStatus?: { NOTARIZED?: number } };
           notarized?: number;
+          stats?: {
+            users?: { total: number };
+            notaries?: { total: number };
+            documents?: { total: number; byStatus?: { NOTARIZED?: number } };
+            fees?: { paidCount: number; totalWei: string };
+          };
+          fees?: { paidCount: number; totalWei: string };
         }>("/admin/stats"),
         api.get<{
           success: true;
@@ -63,30 +74,44 @@ export default function AdminDashboard() {
         }>("/admin/activity"),
       ]);
 
+      const usersObj = statsRes.stats?.users ?? statsRes.users;
       const usersCount =
-        typeof statsRes.users === "object" && statsRes.users !== null
-          ? statsRes.users.total
-          : typeof statsRes.users === "number"
-            ? statsRes.users
+        typeof usersObj === "object" && usersObj !== null
+          ? usersObj.total
+          : typeof usersObj === "number"
+            ? usersObj
             : (statsRes.totalUsers ?? 0);
 
+      const notariesObj = statsRes.stats?.notaries ?? statsRes.notaries;
       const notariesCount =
-        typeof statsRes.notaries === "object" && statsRes.notaries !== null
-          ? statsRes.notaries.total
-          : typeof statsRes.notaries === "number"
-            ? statsRes.notaries
+        typeof notariesObj === "object" && notariesObj !== null
+          ? notariesObj.total
+          : typeof notariesObj === "number"
+            ? notariesObj
             : (statsRes.totalNotaries ?? 0);
 
+      const docsObj = statsRes.stats?.documents ?? statsRes.documents;
       const notarizedCount =
-        statsRes.documents?.byStatus?.NOTARIZED ??
+        docsObj?.byStatus?.NOTARIZED ??
         statsRes.totalNotarized ??
         statsRes.notarized ??
         0;
+
+      const { ethers } = await import("ethers");
+      const feesData = statsRes.stats?.fees ?? statsRes.fees;
+      const feeInfo =
+        feesData && feesData.paidCount !== undefined
+          ? {
+              paidCount: feesData.paidCount,
+              totalEth: ethers.formatEther(feesData.totalWei ?? "0"),
+            }
+          : undefined;
 
       setStats({
         totalUsers: usersCount,
         totalNotaries: notariesCount,
         totalNotarized: notarizedCount,
+        fees: feeInfo,
       });
 
       const rawList = activityRes.activity ?? activityRes.notarizations ?? [];
@@ -123,7 +148,7 @@ export default function AdminDashboard() {
         </Alert>
       )}
 
-      <div className="grid gap-5 md:grid-cols-3">
+      <div className={`grid gap-5 ${stats?.fees ? "sm:grid-cols-2 lg:grid-cols-4" : "md:grid-cols-3"}`}>
         <StatCard
           icon={<Users />}
           label="Users"
@@ -142,6 +167,15 @@ export default function AdminDashboard() {
           value={stats ? String(stats.totalNotarized) : "—"}
           tint="green"
         />
+        {stats?.fees && (
+          <StatCard
+            icon={<Coins />}
+            label="Fees collected"
+            value={`${stats.fees.totalEth} ETH`}
+            hint={`${stats.fees.paidCount} fee payments`}
+            tint="yellow"
+          />
+        )}
       </div>
 
       <section aria-labelledby="recent-activity-heading" className="flex flex-col gap-4">

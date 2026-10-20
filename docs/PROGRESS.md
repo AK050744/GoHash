@@ -18,6 +18,7 @@
 | **Task F1** | `frontend/` (Notary/Admin access & on-chain authorize modal) | **Complete** | RoleRoute/403 fixes, wallet link flow on Requests & Review, Admin Notaries modal preconditions & stepper timing |
 | **Task F2** | Full-stack & Docs (Unique Notarization Key) | **Complete** | Unique notarization key derived from on-chain data (keccak256), public `/api/verify/key/:key` endpoint, CopyButton, certificate & verify tab |
 | **Task F3A** | `backend/` & Docs (Notarization fee in test ETH) | **Complete** | Test ETH fee verified on-chain by read-only provider; GET /api/config/fees; POST /api/notarization/:id/payment; approve 402; reject refundDue; stats |
+| **Task F3B** | `frontend/` & Docs (Fee payment UI, gas estimate & notary gating) | **Complete** | Fee payment card with Stepper, plain ETH MetaMask transfer, 202 polling, session resume, gas estimates, notary gating, refund banner, certificate fee display |
 | **Sprint 6A** | Backend (RBAC audit, security hardening, Zod validation) | **Complete** | RBAC matrix test (26 endpoints), Helmet, CORS pinned, rate limiting, JWT HS256 pinned, Zod schemas, typecheck 0 errors |
 | **Sprint 6B** | Docs (README, architecture, project-flow, VIVA, REQUIREMENTS_COVERAGE) | **Complete** | README.md rewritten; docs/architecture.md, docs/project-flow.md, docs/VIVA.md, docs/REQUIREMENTS_COVERAGE.md created |
 
@@ -410,4 +411,68 @@ If the Hardhat node was restarted or the contract redeployed, restart the backen
   - Precondition failures show ONE error card (*"Cannot start: ..."*) and set Step 1 to FAILED with remaining steps NOT STARTED.
   - Stepper timing strictly enforced: "Sign in wallet" is DONE only after MetaMask returns a transaction; "Record on-chain" is DONE only after mined; "Verify receipt" is DONE only after backend refresh.
   - Eliminated duplicate error cards and prevented false "Transaction failed / Nothing was recorded" alerts when no transaction was sent.
+
+---
+
+### Task F3B (Fee Payment UI, Gas Estimate & Notary Gating)
+
+#### Fee Settings
+- **`NOTARIZATION_FEE_ETH`**: Set to `"0"` (or left unset) to disable the fee feature entirely. When set to a positive value (e.g. `"0.001"`), fee payment and verification are enabled.
+- **`FEE_RECIPIENT_ADDRESS`**: Public Ethereum address receiving plain test ETH transfers (e.g. `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266`). Required when `NOTARIZATION_FEE_ETH > 0`.
+- **Dynamic Configuration**: The frontend never hardcodes amounts or addresses. All parameters (`enabled`, `amountEth`, `amountWei`, `recipient`, `chainId`, `symbol`) are fetched directly from public endpoint `GET /api/config/fees`. When `enabled: false`, all fee UI components are hidden.
+
+#### UI Components & Features
+- **Document Details (`/documents/:id`)**:
+  - Automatically displays the **Notarization fee** card when `status === "REQUESTED"` and the fee is enabled and unpaid.
+  - Card displays fee in test ETH, short recipient address with one-click copy, explanatory notice (*"Test ETH on the local network. The notary pays the network (gas) fee to record your document; your fee covers it."*), and real-time network fee estimate (*"estimate"*).
+  - "Pay with MetaMask" button is safely disabled with clear explanations unless: wallet is linked, MetaMask is connected, connected account matches the user's linked wallet, and network chain matches target chain.
+  - Interactive stepper: `Sign in wallet` → `Network confirmation` (with tx hash) → `Verify payment` → `Fee confirmed`.
+  - Polling mechanism handles 202 `TX_PENDING` responses for up to 30 seconds until mined and verified.
+  - Session storage caching (`sessionStorage.getItem("gohash_pending_payment_<notarizationId>")`): Displays a **Resume previous payment** CTA if interrupted or refreshed during verification.
+  - Rejected & paid banner: When a paid request is rejected, displays: *"Your request was rejected. Your fee is marked for refund (manual in this prototype)."*
+- **Notary Dashboard & Review (`/notary/dashboard`, `/notary/requests/:id`)**:
+  - Pending requests table and request review screen display a `Paid` (green) or `Unpaid` (yellow) badge when fees are enabled.
+  - When unpaid, the **Approve** button is disabled with: *"Waiting for the user's fee payment"*.
+  - Maps 402 `PAYMENT_REQUIRED` error gracefully if an unconfirmed request is submitted.
+  - Displays real-time estimated notary gas fee (*"estimate"*) in the approval progress card before initiating MetaMask transactions.
+- **Admin Dashboard (`/admin/dashboard`)**:
+  - Renders a **Fees collected** StatCard with total ETH and number of payments whenever fee statistics are returned by the backend.
+- **Certificate (`/documents/:id/certificate`)**:
+  - Displays `Fee paid: <amount> ETH (tx <short hash>)` next to the notarization key for confirmed records with a recorded payment.
+  - Print view remains plain, clean, and unstyled.
+
+#### Task F3B Demo Steps
+
+##### Demo 1: Enabling Fees & Owner Payment Flow
+1. Set in `backend/.env`: `NOTARIZATION_FEE_ETH=0.001` and `FEE_RECIPIENT_ADDRESS=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266`. Restart dev backend.
+2. Log in as a document owner (`user@gohash.io`), upload a new document, and click **Request Notarization**.
+3. Immediately observe the **Notarization fee** card appear on `/documents/:id` showing `0.001 ETH`, recipient address copy button, and network fee estimate.
+4. If MetaMask is not connected or connected to the wrong account, observe the descriptive helper and switch network / connect buttons.
+5. Click **Pay with MetaMask**. Confirm the plain ETH transfer in MetaMask.
+6. Observe the Stepper advance: `Sign in wallet` (done) → `Network confirmation` (shows transaction hash) → `Verify payment` (active) → `Fee confirmed` (done).
+7. Notice the card transitions to green **Fee Paid** badge state.
+
+##### Demo 2: Session Resume for Pending Payment
+1. Submit a payment in MetaMask and refresh the page before backend verification completes.
+2. Observe the blue **Unfinished payment detected** banner displaying the saved transaction hash and a **Resume previous payment** button.
+3. Click **Resume previous payment**; the backend verification completes without requiring a second on-chain transaction.
+
+##### Demo 3: Notary Gating with Fees
+1. With fees enabled, upload another document and request notarization without paying.
+2. Log in as a notary (`notary@gohash.io`) and navigate to `/notary/dashboard`.
+3. Observe the `Unpaid` badge in the Pending Requests table.
+4. Click **View** to open `/notary/requests/:id`.
+5. Observe the `Unpaid` badge in the request details and note that the **Approve** button is disabled with: *"Waiting for the user's fee payment"*.
+6. Switch back to user account, pay the fee, and return as notary: the badge updates to `Paid` and the **Approve** button is immediately enabled with the estimated notarization gas fee displayed.
+
+##### Demo 4: Rejection & Refund Due Banner
+1. On a paid request, click **Reject** as notary and provide a reason.
+2. Log in as the document owner and open the document.
+3. Observe the rejection banner displaying the notary's reason and the explicit notice: *"Your request was rejected. Your fee is marked for refund (manual in this prototype)."*
+
+##### Demo 5: Certificate Display
+1. Complete a notarization on a paid document.
+2. Open `/documents/:id/certificate`.
+3. Verify the certificate displays `Fee paid: 0.001 ETH (tx 0x...)` alongside the Unique Notarization Key.
+4. Click **Print certificate** to verify the print layout remains plain, monochrome, and formatted for single-page paper export.
 

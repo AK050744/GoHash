@@ -11,6 +11,9 @@ import { api } from "@/lib/api";
 import { formatWalletError, linkMetaMaskWallet, useConnectedWallet } from "@/lib/wallet";
 import { useAuth } from "@/context/AuthContext";
 
+import type { FeeConfig } from "@/lib/fees";
+import { getFeeConfig } from "@/lib/fees";
+
 interface ApiNotarization {
   id: string;
   documentId: string;
@@ -19,6 +22,12 @@ interface ApiNotarization {
   createdAt: string;
   document: { id: string; originalName: string; sha256Hash: string; createdAt: string };
   owner: { name: string };
+  payment?: {
+    status: string;
+    amountWei?: string;
+    transactionHash?: string;
+    refundDue?: boolean;
+  } | null;
 }
 
 export default function NotaryDashboard() {
@@ -26,6 +35,7 @@ export default function NotaryDashboard() {
   const [requestsState, setRequestsState] = useState<ListState<PendingRequest>>({
     status: "loading",
   });
+  const [feeConfig, setFeeConfig] = useState<FeeConfig>({ enabled: false });
 
   const { connectedAccount, isMismatch } = useConnectedWallet(user?.walletAddress);
   const [walletLinking, setWalletLinking] = useState(false);
@@ -51,15 +61,20 @@ export default function NotaryDashboard() {
   const load = useCallback(async () => {
     setRequestsState({ status: "loading" });
     try {
-      const res = await api.get<{ success: true; notarizations: ApiNotarization[] }>(
-        "/notarization/pending",
-      );
+      const [res, fees] = await Promise.all([
+        api.get<{ success: true; notarizations: ApiNotarization[] }>(
+          "/notarization/pending",
+        ),
+        getFeeConfig(),
+      ]);
+      setFeeConfig(fees);
       const items: PendingRequest[] = res.notarizations.map((n) => ({
         id: n.id,
         documentName: n.document.originalName,
         hash: n.documentHash,
         ownerName: n.owner.name,
         requestedAt: new Date(n.createdAt).toLocaleDateString(),
+        payment: n.payment ?? null,
       }));
       setRequestsState({ status: "ready", items });
     } catch (err) {
@@ -116,7 +131,7 @@ export default function NotaryDashboard() {
           emptyDescription="Documents sent for notarization will appear here."
           onRetry={load}
         >
-          {(requests) => <PendingRequestsTable requests={requests} />}
+          {(requests) => <PendingRequestsTable requests={requests} feeConfig={feeConfig} />}
         </ListBody>
       </section>
     </PageContainer>

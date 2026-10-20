@@ -10,6 +10,7 @@ import {
 
 import { PageContainer } from "@/components/layout/page-container";
 import { HashBlock } from "@/components/documents/hash-block";
+import { FeePaymentCard } from "@/components/documents/fee-payment-card";
 import type { DocumentDetail } from "@/components/documents/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api } from "@/lib/api";
+import { FeeConfig, getFeeConfig } from "@/lib/fees";
 import { useAuth } from "@/context/AuthContext";
 
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
@@ -72,6 +74,13 @@ interface ApiDoc {
     notarizationKey?: string;
     timestamp?: number;
     rejectionReason?: string | null;
+    payment?: {
+      status: string;
+      amountWei?: string;
+      transactionHash?: string;
+      paidAt?: string;
+      refundDue?: boolean;
+    } | null;
   } | null;
 }
 
@@ -80,6 +89,7 @@ export default function DocumentDetails() {
   const { user } = useAuth();
 
   const [record, setRecord] = useState<DocumentDetail | null>(null);
+  const [feeConfig, setFeeConfig] = useState<FeeConfig>({ enabled: false });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [requestLoading, setRequestLoading] = useState(false);
@@ -92,9 +102,11 @@ export default function DocumentDetails() {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await api.get<{ success: true; document: ApiDoc }>(
-        `/documents/${id}`,
-      );
+      const [res, fees] = await Promise.all([
+        api.get<{ success: true; document: ApiDoc }>(`/documents/${id}`),
+        getFeeConfig(),
+      ]);
+      setFeeConfig(fees);
       const d = res.document;
       const n = d.notarization;
       setRecord({
@@ -111,6 +123,10 @@ export default function DocumentDetails() {
         transactionHash: n?.transactionHash ?? undefined,
         contractAddress: n?.contractAddress ?? undefined,
         notarizationKey: n?.notarizationKey ?? undefined,
+        notarizationId: n?.id ?? undefined,
+        notarizationStatus: n?.status ?? undefined,
+        rejectionReason: n?.rejectionReason ?? undefined,
+        payment: n?.payment ?? undefined,
       });
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Failed to load document");
@@ -241,6 +257,37 @@ export default function DocumentDetails() {
           </Button>
         </div>
       </Card>
+
+      {record?.status === "REJECTED" && (
+        <Alert variant="warning">
+          <AlertTitle>Request rejected</AlertTitle>
+          <AlertDescription className="flex flex-col gap-2">
+            {record.rejectionReason && (
+              <p>
+                <span className="font-bold">Reason:</span> {record.rejectionReason}
+              </p>
+            )}
+            {(record.payment?.refundDue || record.payment?.status === "PAID") && (
+              <p className="font-bold text-navy">
+                Your request was rejected. Your fee is marked for refund (manual in this prototype).
+              </p>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {feeConfig.enabled &&
+        record?.notarizationId &&
+        record?.notarizationStatus === "REQUESTED" && (
+          <FeePaymentCard
+            notarizationId={record.notarizationId}
+            documentId={id}
+            feeConfig={feeConfig}
+            userLinkedWallet={user?.walletAddress}
+            currentPayment={record.payment}
+            onPaymentSuccess={load}
+          />
+        )}
 
       <Card className="flex flex-col gap-6 p-6 md:p-8">
         <div className="flex items-center gap-3">

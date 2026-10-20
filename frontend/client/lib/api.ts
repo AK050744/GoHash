@@ -54,7 +54,11 @@ async function request<T>(
       json?.error?.message ??
       json?.message ??
       `Request failed: ${res.status}`;
-    throw Object.assign(new Error(msg), { code: json?.error?.code, status: res.status });
+    throw Object.assign(new Error(msg), {
+      code: json?.error?.code,
+      status: res.status,
+      details: json?.error?.details,
+    });
   }
 
   return json as T;

@@ -10,6 +10,8 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { api } from "@/lib/api";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { CopyButton } from "@/components/ui/copy-button";
+import { shortenHash } from "@/components/documents/hash-block";
+import { formatEther } from "ethers";
 
 interface CertificateFieldProps {
   label: string;
@@ -60,6 +62,13 @@ interface ApiDoc {
     notarizationKey?: string;
     timestamp?: number;
     rejectionReason?: string | null;
+    payment?: {
+      status: string;
+      amountWei?: string;
+      transactionHash?: string;
+      paidAt?: string;
+      refundDue?: boolean;
+    } | null;
   } | null;
 }
 
@@ -92,6 +101,7 @@ export default function Certificate() {
         transactionHash: n?.transactionHash ?? undefined,
         contractAddress: n?.contractAddress ?? undefined,
         notarizationKey: n?.notarizationKey ?? undefined,
+        payment: n?.payment ?? undefined,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load document certificate");
@@ -199,6 +209,15 @@ export default function Certificate() {
                     value={record.notarizationKey}
                     mono
                     withCopy
+                  />
+                </div>
+              )}
+              {record?.payment?.transactionHash && (
+                <div className="sm:col-span-2">
+                  <CertificateField
+                    label="Notarization fee"
+                    value={`Fee paid: ${formatEther(record.payment.amountWei ?? "0")} ETH (tx ${shortenHash(record.payment.transactionHash)})`}
+                    mono
                   />
                 </div>
               )}
