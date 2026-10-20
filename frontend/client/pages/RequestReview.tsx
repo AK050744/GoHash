@@ -203,6 +203,7 @@ export default function RequestReview() {
               transactionHash: string;
               blockNumber: number;
               contractAddress: string;
+              notarizationKey?: string;
             };
           }>(`/notarization/${id}/confirm`, { transactionHash: txHash });
 
@@ -216,6 +217,7 @@ export default function RequestReview() {
               transactionHash: confirmRes.notarization.transactionHash,
               blockNumber: String(confirmRes.notarization.blockNumber),
               contractAddress: confirmRes.notarization.contractAddress,
+              notarizationKey: confirmRes.notarization.notarizationKey,
             });
             setApprovalState("confirmed");
             confirmed = true;

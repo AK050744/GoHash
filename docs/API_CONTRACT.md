@@ -65,16 +65,19 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 | `POST` | `/api/notarization/:id/approve` | JWT (NOTARY) | Validate preconditions and prepare on-chain notarize call | **IMPLEMENTED** |
 | `POST` | `/api/notarization/:id/reject` | JWT (NOTARY) | Reject notarization with reason | **IMPLEMENTED** |
 | `POST` | `/api/notarization/:id/confirm` | JWT (NOTARY) | Verify on-chain transaction receipt & confirm notarization | **IMPLEMENTED** |
+| `POST` | `/api/notarization/:id/payment` | JWT (USER) | Submit fee payment in test ETH verified on-chain | **IMPLEMENTED** |
+| `GET` | `/api/config/fees` | Public | Public fee configuration (test ETH on local chain) | **IMPLEMENTED** |
 | `GET` | `/api/blockchain/contract` | JWT (ADMIN) | Smart contract address, chainId, and full ABI for wallet operations | **IMPLEMENTED** |
 | `GET` | `/api/blockchain/:documentId` | JWT | Retrieve stored and on-chain notarization receipt | **IMPLEMENTED** |
 | `POST` | `/api/verify` | Public | Verify PDF document against blockchain without storing file | **IMPLEMENTED** |
 | `GET` | `/api/verify/hash/:sha256` | Public | Verify SHA-256 hash string directly against blockchain | **IMPLEMENTED** |
+| `GET` | `/api/verify/key/:key` | Public | Look up notarization existence via unique key | **IMPLEMENTED** |
 | `GET` | `/api/admin/users` | JWT (ADMIN) | List users with optional role and name/email query | **IMPLEMENTED** |
 | `PATCH` | `/api/admin/users/:id/role` | JWT (ADMIN) | Change user role (USER, NOTARY, ADMIN) | **IMPLEMENTED** |
 | `PATCH` | `/api/admin/users/:id/status` | JWT (ADMIN) | Enable or disable user account (immediate JWT invalidation) | **IMPLEMENTED** |
 | `GET` | `/api/admin/notaries` | JWT (ADMIN) | List NOTARY users with live on-chain authorization status | **IMPLEMENTED** |
 | `GET` | `/api/admin/activity` | JWT (ADMIN) | List latest 50 notarization activities (newest first) | **IMPLEMENTED** |
-| `GET` | `/api/admin/stats` | JWT (ADMIN) | Aggregate system-wide counts and statistics | **IMPLEMENTED** |
+| `GET` | `/api/admin/stats` | JWT (ADMIN) | Aggregate system-wide counts and statistics (including fees) | **IMPLEMENTED** |
 
 ---
 
@@ -556,6 +559,7 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 - **Purpose**: Verify all preconditions, transition Notarization → `APPROVED` atomically, and return the exact smart contract method and arguments for the notary's browser wallet to execute.
 - **Allowed States**: `REQUESTED`, `APPROVED` (retry), or `FAILED`. Any other status returns `409 Conflict` (`INVALID_STATE`).
 - **Preconditions Checked**:
+  0. If notarization fee is enabled, the request must have status `PAID` (`402 Payment Required` / `PAYMENT_REQUIRED`). If fee is disabled, behaviour is unchanged.
   1. Notary cannot approve their own document (`403 Forbidden` / `SELF_NOTARIZATION_NOT_ALLOWED`).
   2. Notary must have a linked wallet (`400 Bad Request` / `WALLET_NOT_LINKED`).
   3. Notary wallet must be authorized on-chain via smart contract `isNotary(address)` (`403 Forbidden` / `NOTARY_NOT_AUTHORIZED_ON_CHAIN`).
@@ -593,6 +597,7 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 - **Error Responses**:
   - `400 Bad Request` (`WALLET_NOT_LINKED`): Notary has no linked wallet.
   - `400 Bad Request` (`OWNER_WALLET_REQUIRED`): Document owner has no linked wallet.
+  - `402 Payment Required` (`PAYMENT_REQUIRED`): Notarization fee is enabled and request has not been paid.
   - `403 Forbidden` (`FORBIDDEN`): Caller is not a notary.
   - `403 Forbidden` (`SELF_NOTARIZATION_NOT_ALLOWED`): A notary cannot approve or reject their own document.
   - `403 Forbidden` (`NOTARY_NOT_AUTHORIZED_ON_CHAIN`): Notary wallet not authorized on smart contract.
@@ -663,6 +668,85 @@ All UI copy, API responses, error messages, code comments, and documentation mus
     - `WRONG_HASH`: Event document hash parameter does not match the document's SHA-256 hash.
     - `WRONG_EVENT_NOTARY`: Event notary address parameter does not match the approving notary's wallet.
     - `Transaction hash is already used by another confirmed notarization`: Transaction hash has already been used by another confirmed notarization.
+
+#### `POST /api/notarization/:id/payment`
+- **Auth**: Bearer JWT (Role: `USER` who requested the notarization; others receive `404 Not Found`)
+- **Status**: `IMPLEMENTED`
+- **Purpose**: Verify and record fee payment in test ETH for a requested notarization. The user sends a plain transfer from their linked wallet to the configured `FEE_RECIPIENT_ADDRESS`. The backend verifies the transaction on-chain via its read-only provider.
+- **Terminology / Framing**: This is test ETH on the local chain, not real money.
+- **Refund Limitation**: A fee for a rejected request is marked with `refundDue: true`. The refund itself is manual on the test chain (documented system limitation).
+- **Request Body**:
+```json
+{
+  "transactionHash": "0x456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123"
+}
+```
+- **Success (200)**:
+```json
+{
+  "success": true,
+  "payment": {
+    "status": "PAID",
+    "amountWei": "1000000000000000",
+    "transactionHash": "0x456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123",
+    "payer": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+    "recipient": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+    "blockNumber": 142,
+    "paidAt": "2026-10-20T12:00:00.000Z",
+    "refundDue": false
+  }
+}
+```
+- **Pending (202)**:
+```json
+{
+  "success": true,
+  "status": "TX_PENDING",
+  "code": "TX_PENDING",
+  "message": "Transaction has not been mined yet. Try again shortly."
+}
+```
+- **Idempotency**: Submitting the same transaction hash again for an already `PAID` notarization returns `200 OK` with the existing payment record. Submitting a different transaction hash returns `409 Conflict` (`ALREADY_PAID`).
+- **Error Responses**:
+  - `400 Bad Request` (`VALIDATION_ERROR`): Invalid transaction hash format.
+  - `400 Bad Request` (`WALLET_NOT_LINKED`): User account does not have a linked wallet address.
+  - `404 Not Found` (`NOT_FOUND`): Notarization record does not exist or caller is not the owner (prevents information leakage).
+  - `409 Conflict` (`FEE_NOT_ENABLED`): Fee feature is disabled (`NOTARIZATION_FEE_ETH=0`).
+  - `409 Conflict` (`INVALID_STATE`): Notarization is not in `REQUESTED` status.
+  - `409 Conflict` (`ALREADY_PAID`): Notarization is already paid with a different transaction hash.
+  - `409 Conflict` (`PAYMENT_ALREADY_USED`): Transaction hash has already been used by another notarization.
+  - `422 Unprocessable Entity` (`PAYMENT_INVALID`): Transaction failed validation with a specific reason in `error.details.reason`:
+    - `TX_NOT_FOUND`: Transaction hash not found on chain.
+    - `TX_REVERTED`: Transaction reverted on-chain.
+    - `WRONG_CHAIN`: Transaction chainId does not match configured chain.
+    - `WRONG_RECIPIENT`: `tx.to` does not match `FEE_RECIPIENT_ADDRESS`.
+    - `WRONG_PAYER`: `tx.from` does not match the requesting user's linked wallet.
+    - `AMOUNT_TOO_LOW`: `tx.value` is less than required fee.
+    - `NOT_A_PLAIN_TRANSFER`: `tx.data` is not empty (plain ETH transfer required).
+
+#### `GET /api/config/fees`
+- **Auth**: None (Public)
+- **Status**: `IMPLEMENTED`
+- **Purpose**: Returns the public fee configuration so the frontend client knows whether fee payment is required before approval, the amount in ETH/Wei, and the recipient address.
+- **Success (200 - Fee Enabled)**:
+```json
+{
+  "success": true,
+  "enabled": true,
+  "amountEth": "0.001",
+  "amountWei": "1000000000000000",
+  "recipient": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+  "chainId": 31337,
+  "symbol": "ETH"
+}
+```
+- **Success (200 - Fee Disabled)**:
+```json
+{
+  "success": true,
+  "enabled": false
+}
+```
 
 ---
 
@@ -838,6 +922,56 @@ All UI copy, API responses, error messages, code comments, and documentation mus
   - `429 Too Many Requests` (`RATE_LIMITED`): Exceeded per-minute rate limit.
   - `503 Service Unavailable` (`CHAIN_UNREACHABLE`): Blockchain RPC provider unreachable.
   - `503 Service Unavailable` (`CONTRACT_NOT_DEPLOYED`): DocumentNotary contract not deployed at configured address.
+
+#### `GET /api/verify/key/:key`
+- **Auth**: None (Public endpoint; rate-limited per IP)
+- **Status**: `IMPLEMENTED`
+- **Rate Limit**: Default 60 requests/minute per IP (`VERIFY_RATE_LIMIT_PER_MIN`), returns HTTP 429 `RATE_LIMITED` when exceeded.
+- **Purpose**: A key lookup shows that a record exists; uploading the file proves the file matches it.
+- **Key Derivation & Invariants**:
+  - The key is a lookup code derived from on-chain data, not stored in the contract.
+  - Computed on confirmation as `"GH-"` + the first 16 uppercase hex characters of `keccak256(abi.encodePacked(documentHash bytes32, transactionHash bytes32))`.
+  - Stored in MongoDB as the raw 16 characters with a unique sparse index.
+  - Display format: `GH-XXXX-XXXX-XXXX-XXXX`.
+- **Request Parameters**:
+  - `key` (URL path parameter): 16-character hexadecimal lookup code. The server automatically normalizes the input by stripping dashes (`-`) and spaces (` `), removing any optional `GH` prefix, and converting to uppercase.
+- **Processing Rules**:
+  - Normalizes key (strips dashes and spaces, converts to uppercase).
+  - Validates key format; malformed key gives `400 Bad Request` (`INVALID_KEY`).
+  - Queries MongoDB for a `CONFIRMED` notarization record matching the raw 16-character key.
+  - If no `CONFIRMED` record exists, returns `{ "success": true, "status": "NOT_FOUND", "message": "No notarization record matches this key." }`.
+  - If a `CONFIRMED` record exists, the server re-reads the blockchain via `DocumentNotary.getRecord(documentHash)`.
+  - **Fail-safe Rule**: If the blockchain cannot be read (RPC provider unreachable or contract missing), the endpoint returns `503 Service Unavailable` (`CHAIN_UNREACHABLE` or `CONTRACT_NOT_DEPLOYED`). It **never** answers `NOT_FOUND` on chain failure.
+  - If the on-chain record exists, returns `{ "status": "FOUND", "key": "GH-XXXX-XXXX-XXXX-XXXX", "record": { "notaryWallet", "timestamp", "transactionHash", "blockNumber", "contractAddress" } }`.
+  - **Privacy Guarantee**: Strictly **no owner data** (`ownerWallet`, `ownerName`, `email`) and **no file name** (`fileName`, `originalName`) are ever returned.
+- **Success - Record Found (200)**:
+```json
+{
+  "success": true,
+  "status": "FOUND",
+  "key": "GH-DB19-36EF-963F-E929",
+  "record": {
+    "notaryWallet": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+    "timestamp": 1728472500,
+    "transactionHash": "0x4f8a123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "blockNumber": 14,
+    "contractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+  }
+}
+```
+- **Success - Record Not Found (200)**:
+```json
+{
+  "success": true,
+  "status": "NOT_FOUND",
+  "message": "No notarization record matches this key."
+}
+```
+- **Error Responses**:
+  - `400 Bad Request` (`INVALID_KEY`): Malformed key format (not a 16-hex-character code).
+  - `429 Too Many Requests` (`RATE_LIMITED`): Exceeded per-minute rate limit.
+  - `503 Service Unavailable` (`CHAIN_UNREACHABLE`): Blockchain RPC provider unreachable. Never returns `NOT_FOUND` when chain cannot be read.
+  - `503 Service Unavailable` (`CONTRACT_NOT_DEPLOYED`): DocumentNotary contract missing.
 
 ---
 

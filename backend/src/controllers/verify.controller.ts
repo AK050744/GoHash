@@ -39,6 +39,8 @@ import { computeSha256 } from '../services/hash.service'
 import { BlockchainService } from '../services/blockchain.service'
 import { Notarization } from '../models/Notarization'
 import { env } from '../config/env'
+import { formatNotarizationKey, normalizeNotarizationKey } from '../utils/notarizationKey'
+import { ensureNotarizationKeyForRecord } from '../services/notarization.service'
 
 /**
  * Internal helper to query on-chain notarization status and supplement
@@ -65,6 +67,7 @@ async function lookupVerificationRecord(hash: string, notFoundMessage: string) {
   let txHash: string | undefined
   let blockNumber: number | undefined
   let documentInfo: { id: string; originalName: string } | undefined
+  let notarizationKey: string | undefined
 
   try {
     const dbRecord = await Notarization.findOne({
@@ -76,6 +79,10 @@ async function lookupVerificationRecord(hash: string, notFoundMessage: string) {
       .lean()
 
     if (dbRecord) {
+      await ensureNotarizationKeyForRecord(dbRecord)
+      if (dbRecord.notarizationKey) {
+        notarizationKey = formatNotarizationKey(dbRecord.notarizationKey)
+      }
       if (dbRecord.transactionHash) txHash       = dbRecord.transactionHash
       if (dbRecord.blockNumber)     blockNumber   = dbRecord.blockNumber
 
@@ -101,12 +108,17 @@ async function lookupVerificationRecord(hash: string, notFoundMessage: string) {
 
   if (txHash) record.transactionHash = txHash
   if (blockNumber !== undefined) record.blockNumber = blockNumber
+  if (notarizationKey) record.notarizationKey = notarizationKey
 
   const body: Record<string, unknown> = {
     success: true,
     status:  'VERIFIED',
     hash,
     record,
+  }
+
+  if (notarizationKey) {
+    body.notarizationKey = notarizationKey
   }
 
   if (documentInfo) {
@@ -180,4 +192,73 @@ export const verifyHash = asyncHandler(async (req: Request, res: Response) => {
 
   const { status, body } = await lookupVerificationRecord(hash, 'No notarization record matches this hash.')
   res.status(status).json(body)
+})
+
+/**
+ * GET /api/verify/key/:key
+ * Public endpoint — look up notarization record by unique key.
+ * Rate-limited at the route level.
+ *
+ * Normalizes key (strips dashes and spaces, uppercase).
+ * Returns 400 for malformed key.
+ * If no CONFIRMED record exists in MongoDB -> { success: true, status: "NOT_FOUND" }.
+ * If found, re-reads chain (BlockchainService.getRecord(storedHash)).
+ * If chain cannot be read -> 503 (never return NOT_FOUND on chain read failure).
+ * If on-chain record exists -> { success: true, status: "FOUND", key, record: { notaryWallet, timestamp, transactionHash, blockNumber, contractAddress } }.
+ * If on-chain record does not exist -> { success: true, status: "NOT_FOUND" }.
+ * Strictly no owner data, no file name.
+ */
+export const verifyKey = asyncHandler(async (req: Request, res: Response) => {
+  const rawInput = req.params.key
+  const normalizedRawKey = normalizeNotarizationKey(rawInput)
+
+  if (!normalizedRawKey) {
+    throw ApiError.badRequest(
+      'Invalid notarization key format. Expected 16-character hexadecimal code (e.g. GH-XXXX-XXXX-XXXX-XXXX).',
+      'INVALID_KEY'
+    )
+  }
+
+  // Look up CONFIRMED notarization by raw 16-character key
+  const dbRecord = await Notarization.findOne({
+    notarizationKey: normalizedRawKey,
+    status: 'CONFIRMED',
+  }).lean()
+
+  if (!dbRecord || !dbRecord.documentHash) {
+    res.status(200).json({
+      success: true,
+      status:  'NOT_FOUND',
+      message: 'No notarization record matches this key.',
+    })
+    return
+  }
+
+  // Re-read chain for stored hash (throws 503 on RPC / contract error; never return NOT_FOUND on chain error)
+  const onChain = await BlockchainService.getRecord(dbRecord.documentHash)
+
+  if (!onChain.exists) {
+    res.status(200).json({
+      success: true,
+      status:  'NOT_FOUND',
+      message: 'No on-chain notarization record matches this key.',
+    })
+    return
+  }
+
+  const formattedKey = formatNotarizationKey(normalizedRawKey)
+  const contractAddress = BlockchainService.getContractInfo().address
+
+  res.status(200).json({
+    success: true,
+    status:  'FOUND',
+    key:     formattedKey,
+    record: {
+      notaryWallet:    onChain.notary,
+      timestamp:       onChain.timestamp,
+      transactionHash: dbRecord.transactionHash ?? null,
+      blockNumber:     dbRecord.blockNumber ?? null,
+      contractAddress,
+    },
+  })
 })

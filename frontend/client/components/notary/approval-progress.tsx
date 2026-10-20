@@ -135,6 +135,21 @@ function ApprovalProgress({
                   )}
                 </dd>
               </div>
+              {receipt?.notarizationKey && (
+                <div className="flex min-w-0 flex-col gap-2 md:col-span-2">
+                  <dt className="text-xs font-bold tracking-[0.12em] text-slate uppercase">
+                    Unique Notarization Key
+                  </dt>
+                  <dd className="flex min-w-0 items-center gap-3 font-mono font-bold">
+                    <span>{receipt.notarizationKey}</span>
+                    <CopyButton
+                      value={receipt.notarizationKey}
+                      label="unique notarization key"
+                      className="shrink-0"
+                    />
+                  </dd>
+                </div>
+              )}
               <div className="flex min-w-0 flex-col gap-2">
                 <dt className="text-xs font-bold tracking-[0.12em] text-slate uppercase">
                   Block number

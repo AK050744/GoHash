@@ -31,8 +31,47 @@ import { DocumentModel } from '../models/Document'
 import { User } from '../models/User'
 import { ApiError } from '../utils/ApiError'
 import { BlockchainService } from './blockchain.service'
+import { computeNotarizationKey, formatNotarizationKey } from '../utils/notarizationKey'
+import { getFeeConfig } from '../config/fee'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+export function serializePayment(p: any) {
+  if (!p) return null
+  return {
+    status: p.status,
+    amountWei: p.amountWei,
+    transactionHash: p.transactionHash,
+    ...(p.refundDue !== undefined ? { refundDue: p.refundDue } : {}),
+  }
+}
+
+/**
+ * Ensures that a CONFIRMED notarization has its notarizationKey computed and saved.
+ * Idempotent: if already present, does nothing.
+ * The key is a lookup code derived from on-chain data, not stored in the contract.
+ */
+export async function ensureNotarizationKeyForRecord(rec: {
+  _id: any
+  status: string
+  documentHash: string
+  transactionHash?: string | null
+  notarizationKey?: string | null
+}): Promise<string | null> {
+  if (rec.status === 'CONFIRMED' && rec.documentHash && rec.transactionHash) {
+    if (rec.notarizationKey) {
+      return rec.notarizationKey
+    }
+    const rawKey = computeNotarizationKey(rec.documentHash, rec.transactionHash)
+    await Notarization.updateOne(
+      { _id: rec._id, $or: [{ notarizationKey: null }, { notarizationKey: { $exists: false } }] },
+      { $set: { notarizationKey: rawKey } }
+    )
+    rec.notarizationKey = rawKey
+    return rawKey
+  }
+  return rec.notarizationKey ?? null
+}
 
 function serializeNotarization(n: INotarization) {
   return {
@@ -46,6 +85,9 @@ function serializeNotarization(n: INotarization) {
     blockNumber:     n.blockNumber ?? null,
     contractAddress: n.contractAddress ?? null,
     chainId:         n.chainId ?? null,
+    // The key is a lookup code derived from on-chain data, not stored in the contract.
+    notarizationKey: n.notarizationKey ? formatNotarizationKey(n.notarizationKey) : null,
+    payment:         serializePayment(n.payment),
     // on-chain timestamp: proves hash was recorded no later than this time (not authorship or creation time)
     onChainTimestamp: n.onChainTimestamp ?? null,
     rejectionReason: n.rejectionReason ?? null,
@@ -132,6 +174,7 @@ export class NotarizationService {
         blockNumber:     n.blockNumber ?? null,
         contractAddress: n.contractAddress ?? null,
         chainId:         n.chainId ?? null,
+        payment:         serializePayment(n.payment),
         // on-chain timestamp: proves hash was recorded no later than this time
         onChainTimestamp: n.onChainTimestamp ?? null,
         rejectionReason: n.rejectionReason ?? null,
@@ -172,6 +215,9 @@ export class NotarizationService {
       .populate('requestedBy', 'name')
       .sort({ createdAt: -1 })
 
+    // Ensure any existing CONFIRMED notarizations have a computed notarizationKey
+    await Promise.all(notarizations.map((n) => ensureNotarizationKeyForRecord(n)))
+
     return notarizations.map((n) => {
       const doc = n.documentId as any
       const owner = n.requestedBy as any
@@ -187,6 +233,8 @@ export class NotarizationService {
         blockNumber:     n.blockNumber ?? null,
         contractAddress: n.contractAddress ?? null,
         chainId:         n.chainId ?? null,
+        notarizationKey: n.notarizationKey ? formatNotarizationKey(n.notarizationKey) : null,
+        payment:         serializePayment(n.payment),
         onChainTimestamp: n.onChainTimestamp ?? null,
         rejectionReason: n.rejectionReason ?? null,
         failureReason:   n.failureReason ?? null,
@@ -237,6 +285,9 @@ export class NotarizationService {
     if (!isOwner && !isPrivileged) {
       throw ApiError.notFound('Notarization not found', 'NOT_FOUND')
     }
+
+    // Ensure key is computed for existing CONFIRMED records on read
+    await ensureNotarizationKeyForRecord(n)
 
     const doc = n.documentId as any
     const owner = n.requestedBy as any
@@ -295,6 +346,15 @@ export class NotarizationService {
       )
     }
 
+    const updateSet: Record<string, unknown> = {
+      status:          'REJECTED',
+      notaryId:        new Types.ObjectId(notaryId),
+      rejectionReason: reason.trim(),
+    }
+    if (n.payment?.status === 'PAID') {
+      updateSet['payment.refundDue'] = true
+    }
+
     // Atomic state update
     const updated = await Notarization.findOneAndUpdate(
       {
@@ -302,11 +362,7 @@ export class NotarizationService {
         status: { $in: ['REQUESTED', 'APPROVED'] },
       },
       {
-        $set: {
-          status:          'REJECTED',
-          notaryId:        new Types.ObjectId(notaryId),
-          rejectionReason: reason.trim(),
-        },
+        $set: updateSet,
       },
       { new: true }
     )
@@ -358,6 +414,16 @@ export class NotarizationService {
         409,
         'INVALID_STATE',
         `Cannot approve a notarization in status: ${n.status}`
+      )
+    }
+
+    // 0. If fee is enabled, request must be PAID (402 PAYMENT_REQUIRED)
+    const feeConfig = getFeeConfig()
+    if (feeConfig.enabled && n.payment?.status !== 'PAID') {
+      throw new ApiError(
+        402,
+        'PAYMENT_REQUIRED',
+        'A notarization fee is required before this request can be approved.'
       )
     }
 
@@ -478,6 +544,7 @@ export class NotarizationService {
     // Idempotent: confirming an already CONFIRMED request with the same hash → idempotent 200
     if (n.status === 'CONFIRMED') {
       if (n.transactionHash?.toLowerCase() === transactionHash.toLowerCase()) {
+        await ensureNotarizationKeyForRecord(n)
         return {
           status: 200,
           body: {
@@ -574,7 +641,13 @@ export class NotarizationService {
 
     // ─── Verification Success ───────────────────────────────────────────────
     // Save transactionHash, blockNumber, contractAddress, chainId, notaryWallet,
-    // and on-chain timestamp (proves the hash was recorded no later than this time)
+    // on-chain timestamp (proves the hash was recorded no later than this time),
+    // and notarizationKey.
+    // The key is a lookup code derived from on-chain data, not stored in the contract:
+    // keccak256(abi-encoded packed [documentHash bytes32, transactionHash bytes32]),
+    // stored as the raw 16 characters. Display format GH-XXXX-XXXX-XXXX-XXXX.
+    const rawNotarizationKey = computeNotarizationKey(n.documentHash, transactionHash)
+
     const updated = await Notarization.findOneAndUpdate(
       {
         _id: n._id,
@@ -584,6 +657,7 @@ export class NotarizationService {
         $set: {
           status:           'CONFIRMED',
           transactionHash,
+          notarizationKey:  rawNotarizationKey,
           blockNumber:      result.blockNumber ?? null,
           contractAddress:  contractInfo.address,
           chainId:          contractInfo.chainId,
@@ -598,6 +672,7 @@ export class NotarizationService {
     if (!updated) {
       const check = await Notarization.findById(n._id)
       if (check && check.status === 'CONFIRMED' && check.transactionHash?.toLowerCase() === transactionHash.toLowerCase()) {
+        await ensureNotarizationKeyForRecord(check)
         return {
           status: 200,
           body: {
@@ -617,6 +692,162 @@ export class NotarizationService {
       body: {
         success: true,
         notarization: serializeNotarization(updated),
+      },
+    }
+  }
+
+  /**
+   * Submit and verify fee payment for a notarization request in test ETH.
+   *
+   * Security & Preconditions:
+   *   - Notarization exists and was requested by userId (404 NOT_FOUND)
+   *   - Notarization status must be REQUESTED (409 INVALID_STATE)
+   *   - Fee must be enabled (409 FEE_NOT_ENABLED)
+   *   - User must have a linked wallet (400 WALLET_NOT_LINKED)
+   *   - If already PAID with same txHash -> idempotent 200
+   *   - If already PAID with different txHash -> 409 ALREADY_PAID
+   *   - Duplicate txHash across other notarizations -> 409 PAYMENT_ALREADY_USED
+   *   - On-chain checks via read-only provider (BlockchainService.verifyPayment):
+   *       TX_NOT_FOUND, TX_PENDING (202), TX_REVERTED, WRONG_CHAIN,
+   *       WRONG_RECIPIENT, WRONG_PAYER, AMOUNT_TOO_LOW, NOT_A_PLAIN_TRANSFER
+   *       -> 422 PAYMENT_INVALID with specific reason
+   *   - On success -> saves payment { status: "PAID" }, returns 200
+   */
+  static async submitPayment(
+    notarizationId: string,
+    userId: string,
+    transactionHash: string
+  ): Promise<{ status: 200 | 202; body: Record<string, unknown> }> {
+    if (!transactionHash || typeof transactionHash !== 'string' || !/^0x[a-fA-F0-9]{64}$/.test(transactionHash)) {
+      throw ApiError.badRequest('Invalid transaction hash format', 'VALIDATION_ERROR')
+    }
+
+    if (!Types.ObjectId.isValid(notarizationId)) {
+      throw ApiError.notFound('Notarization not found', 'NOT_FOUND')
+    }
+
+    const n = await Notarization.findById(notarizationId)
+    if (!n) {
+      throw ApiError.notFound('Notarization not found', 'NOT_FOUND')
+    }
+
+    // Ownership isolation: only the user who requested this notarization can submit payment
+    if (n.requestedBy.toString() !== userId) {
+      throw ApiError.notFound('Notarization not found', 'NOT_FOUND')
+    }
+
+    // Status must be REQUESTED
+    if (n.status !== 'REQUESTED') {
+      throw new ApiError(
+        409,
+        'INVALID_STATE',
+        `Cannot submit payment for a notarization in status: ${n.status}`
+      )
+    }
+
+    // Fee must be enabled
+    const feeConfig = getFeeConfig()
+    if (!feeConfig.enabled) {
+      throw new ApiError(409, 'FEE_NOT_ENABLED', 'Notarization fee is not enabled')
+    }
+
+    // User must have linked wallet
+    const user = await User.findById(userId)
+    if (!user || !user.walletAddress) {
+      throw new ApiError(
+        400,
+        'WALLET_NOT_LINKED',
+        'You must link a wallet address before paying the fee'
+      )
+    }
+
+    const normalizedTx = transactionHash.toLowerCase()
+
+    // Idempotent: same txHash again on already PAID request -> 200
+    if (n.payment?.status === 'PAID') {
+      if (n.payment.transactionHash?.toLowerCase() === normalizedTx) {
+        return {
+          status: 200,
+          body: {
+            success: true,
+            payment: serializePayment(n.payment),
+          },
+        }
+      }
+      throw new ApiError(409, 'ALREADY_PAID', 'This notarization has already been paid')
+    }
+
+    // Duplicate check: this txHash must not be used by another notarization
+    const duplicate = await Notarization.findOne({
+      _id: { $ne: n._id },
+      'payment.transactionHash': normalizedTx,
+    })
+    if (duplicate) {
+      throw new ApiError(
+        409,
+        'PAYMENT_ALREADY_USED',
+        'This payment transaction hash has already been used for another notarization'
+      )
+    }
+
+    // Verify payment on-chain via read-only provider
+    const result = await BlockchainService.verifyPayment(normalizedTx, {
+      recipient: feeConfig.recipient!,
+      payerWallet: user.walletAddress,
+      requiredAmountWei: feeConfig.amountWei!,
+      chainId: feeConfig.chainId!,
+    })
+
+    if (!result.valid) {
+      if (result.reason === 'TX_PENDING') {
+        return {
+          status: 202,
+          body: {
+            success: true,
+            status: 'TX_PENDING',
+            code: 'TX_PENDING',
+            message: 'Transaction has not been mined yet. Try again shortly.',
+          },
+        }
+      }
+
+      throw new ApiError(
+        422,
+        'PAYMENT_INVALID',
+        result.message ?? 'Payment verification failed',
+        { reason: result.reason }
+      )
+    }
+
+    // Save payment details atomically
+    const updated = await Notarization.findOneAndUpdate(
+      { _id: n._id, status: 'REQUESTED' },
+      {
+        $set: {
+          payment: {
+            transactionHash: normalizedTx,
+            payer: result.payer!,
+            recipient: result.recipient!,
+            amountWei: result.amountWei!,
+            blockNumber: result.blockNumber!,
+            status: 'PAID',
+            paidAt: new Date(),
+            refundDue: false,
+          },
+        },
+      },
+      { new: true }
+    )
+
+    if (!updated) {
+      throw new ApiError(409, 'INVALID_STATE', 'Failed to record payment on notarization')
+    }
+
+    return {
+      status: 200,
+      body: {
+        success: true,
+        payment: serializePayment(updated.payment),
       },
     }
   }

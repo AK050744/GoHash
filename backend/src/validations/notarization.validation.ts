@@ -12,6 +12,10 @@ export const confirmNotarizationSchema = z.object({
   transactionHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'Invalid transaction hash format'),
 })
 
+export const paymentSchema = z.object({
+  transactionHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'Invalid transaction hash format'),
+})
+
 export const rejectNotarizationSchema = z.object({
   reason: z
     .string()

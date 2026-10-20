@@ -16,6 +16,8 @@
 | **Sprint 5A & 5B** | Full-stack (Verification API, admin management, certificate) | **Complete** | Public /api/verify, admin dashboard & notaries, on-chain addNotary/removeNotary, certificate export |
 | **Sprint 5C** | Full-stack (Metadata visibility controls) | **Next** | Public verification metadata visibility controls |
 | **Task F1** | `frontend/` (Notary/Admin access & on-chain authorize modal) | **Complete** | RoleRoute/403 fixes, wallet link flow on Requests & Review, Admin Notaries modal preconditions & stepper timing |
+| **Task F2** | Full-stack & Docs (Unique Notarization Key) | **Complete** | Unique notarization key derived from on-chain data (keccak256), public `/api/verify/key/:key` endpoint, CopyButton, certificate & verify tab |
+| **Task F3A** | `backend/` & Docs (Notarization fee in test ETH) | **Complete** | Test ETH fee verified on-chain by read-only provider; GET /api/config/fees; POST /api/notarization/:id/payment; approve 402; reject refundDue; stats |
 | **Sprint 6A** | Backend (RBAC audit, security hardening, Zod validation) | **Complete** | RBAC matrix test (26 endpoints), Helmet, CORS pinned, rate limiting, JWT HS256 pinned, Zod schemas, typecheck 0 errors |
 | **Sprint 6B** | Docs (README, architecture, project-flow, VIVA, REQUIREMENTS_COVERAGE) | **Complete** | README.md rewritten; docs/architecture.md, docs/project-flow.md, docs/VIVA.md, docs/REQUIREMENTS_COVERAGE.md created |
 

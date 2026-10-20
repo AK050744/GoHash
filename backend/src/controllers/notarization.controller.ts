@@ -115,3 +115,24 @@ export const confirmNotarization = asyncHandler(async (req: Request, res: Respon
 
   res.status(status).json(body)
 })
+
+/**
+ * POST /api/notarization/:id/payment (USER who requested it)
+ * Body: { transactionHash: string }
+ * Records fee payment in test ETH verified on-chain.
+ */
+export const submitPayment = asyncHandler(async (req: Request, res: Response) => {
+  const { transactionHash } = req.body
+  if (!transactionHash || typeof transactionHash !== 'string' || !/^0x[a-fA-F0-9]{64}$/.test(transactionHash)) {
+    throw ApiError.badRequest('Invalid transaction hash format', 'VALIDATION_ERROR')
+  }
+
+  const { status, body } = await NotarizationService.submitPayment(
+    req.params.id,
+    req.userId!,
+    transactionHash
+  )
+
+  res.status(status).json(body)
+})
+

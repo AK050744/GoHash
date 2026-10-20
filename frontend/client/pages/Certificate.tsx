@@ -9,14 +9,16 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api } from "@/lib/api";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { CopyButton } from "@/components/ui/copy-button";
 
 interface CertificateFieldProps {
   label: string;
   value?: string;
   mono?: boolean;
+  withCopy?: boolean;
 }
 
-function CertificateField({ label, value, mono = false }: CertificateFieldProps) {
+function CertificateField({ label, value, mono = false, withCopy = false }: CertificateFieldProps) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <dt className="text-xs font-bold tracking-[0.12em] text-slate uppercase print:text-black">
@@ -25,11 +27,18 @@ function CertificateField({ label, value, mono = false }: CertificateFieldProps)
       <dd
         className={
           mono
-            ? "font-mono text-sm break-all"
-            : "font-bold break-words"
+            ? "flex items-center gap-2 font-mono text-sm break-all"
+            : "flex items-center gap-2 font-bold break-words"
         }
       >
-        {value ?? "—"}
+        <span>{value ?? "—"}</span>
+        {withCopy && value && (
+          <CopyButton
+            value={value}
+            label={label.toLowerCase()}
+            className="shrink-0 print:hidden"
+          />
+        )}
       </dd>
     </div>
   );
@@ -48,6 +57,7 @@ interface ApiDoc {
     blockNumber?: number;
     notaryWallet?: string;
     contractAddress?: string;
+    notarizationKey?: string;
     timestamp?: number;
     rejectionReason?: string | null;
   } | null;
@@ -81,6 +91,7 @@ export default function Certificate() {
         blockNumber: n?.blockNumber !== undefined ? String(n.blockNumber) : undefined,
         transactionHash: n?.transactionHash ?? undefined,
         contractAddress: n?.contractAddress ?? undefined,
+        notarizationKey: n?.notarizationKey ?? undefined,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load document certificate");
@@ -181,6 +192,16 @@ export default function Certificate() {
               <CertificateField label="Recorded on-chain" value={record?.recordedAt} />
               <CertificateField label="Transaction hash" value={record?.transactionHash} mono />
               <CertificateField label="Block number" value={record?.blockNumber} />
+              {record?.notarizationKey && (
+                <div className="sm:col-span-2">
+                  <CertificateField
+                    label="Unique Notarization Key"
+                    value={record.notarizationKey}
+                    mono
+                    withCopy
+                  />
+                </div>
+              )}
               <div className="sm:col-span-2">
                 <CertificateField label="Contract address" value={record?.contractAddress} mono />
               </div>

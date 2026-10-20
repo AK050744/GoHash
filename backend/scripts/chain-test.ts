@@ -776,6 +776,16 @@ async function runChainTests() {
         headers: { Authorization: `Bearer ${userAToken}` },
       })
 
+      // Independent recomputation of unique notarization key:
+      // keccak256(abi-encoded packed [documentHash bytes32, transactionHash bytes32]),
+      // first 16 uppercase hex characters formatted as GH-XXXX-XXXX-XXXX-XXXX.
+      const expectedDigest = ethers.solidityPackedKeccak256(
+        ['bytes32', 'bytes32'],
+        [`0x${doc1Hash}`, realTxHash]
+      )
+      const expectedRaw16 = expectedDigest.slice(2, 18).toUpperCase()
+      const expectedKey = `GH-${expectedRaw16.slice(0, 4)}-${expectedRaw16.slice(4, 8)}-${expectedRaw16.slice(8, 12)}-${expectedRaw16.slice(12, 16)}`
+
       const notField = docDetailRes.data?.document?.notarization
       if (
         docDetailRes.status === 200 &&
@@ -787,14 +797,16 @@ async function runChainTests() {
         notField.notaryWallet?.toLowerCase() === signer1Address.toLowerCase() &&
         notField.contractAddress?.toLowerCase() === contractInfo.address.toLowerCase() &&
         typeof notField.timestamp === 'number' &&
-        notField.rejectionReason === null
+        notField.rejectionReason === null &&
+        confirmRes.data?.notarization?.notarizationKey === expectedKey &&
+        notField.notarizationKey === expectedKey
       ) {
         logPass(
           'real flow: on-chain notarize -> confirm -> CONFIRMED',
-          `txHash=${realTxHash.slice(0, 14)}..., block=${receipt.blockNumber}, status=NOTARIZED`
+          `txHash=${realTxHash.slice(0, 14)}..., key=${expectedKey}, block=${receipt.blockNumber}, status=NOTARIZED`
         )
       } else {
-        throw new Error(`Document detail missing notarization: ${JSON.stringify(docDetailRes.data)}`)
+        throw new Error(`Document detail missing notarization or key mismatch: ${JSON.stringify(docDetailRes.data)}`)
       }
     } catch (err) {
       logFail('real flow: on-chain notarize -> confirm -> CONFIRMED', err)
@@ -1342,6 +1354,458 @@ async function runChainTests() {
       logFail('POST /api/verify: no auth token required (no 401)', err)
     }
 
+    // ── Task F2: Unique Notarization Key Tests ──────────────────────────────
+    console.log('\n--- Task F2: Unique Notarization Key Tests ---')
+
+    const f2ExpectedDigest = ethers.solidityPackedKeccak256(
+      ['bytes32', 'bytes32'],
+      [`0x${doc1Hash}`, realTxHash]
+    )
+    const f2Raw16 = f2ExpectedDigest.slice(2, 18).toUpperCase()
+    const f2Key = `GH-${f2Raw16.slice(0, 4)}-${f2Raw16.slice(4, 8)}-${f2Raw16.slice(8, 12)}-${f2Raw16.slice(12, 16)}`
+
+    // F2-1: Key lookup with exact standard format
+    try {
+      const res = await request(`/api/verify/key/${f2Key}`)
+      const contractInfo = BlockchainService.getContractInfo()
+      if (
+        res.status === 200 &&
+        res.data?.success === true &&
+        res.data?.status === 'FOUND' &&
+        res.data?.key === f2Key &&
+        res.data?.record?.notaryWallet?.toLowerCase() === signer1Address.toLowerCase() &&
+        res.data?.record?.transactionHash?.toLowerCase() === realTxHash.toLowerCase() &&
+        res.data?.record?.contractAddress?.toLowerCase() === contractInfo.address.toLowerCase() &&
+        typeof res.data?.record?.timestamp === 'number' &&
+        typeof res.data?.record?.blockNumber === 'number'
+      ) {
+        logPass('GET /api/verify/key/:key (exact format) -> FOUND', `key=${f2Key}, notary=${signer1Address.slice(0, 10)}...`)
+      } else {
+        throw new Error(`Expected FOUND with full record, got ${res.status}: ${JSON.stringify(res.data)}`)
+      }
+    } catch (err) {
+      logFail('GET /api/verify/key/:key (exact format) -> FOUND', err)
+    }
+
+    // F2-2: Key lookup normalization (dashes, lowercase, and spaces)
+    try {
+      const lowerKey = f2Key.toLowerCase()
+      const spaceKey = f2Key.replace(/-/g, ' ')
+      const rawHexKey = f2Raw16.toLowerCase()
+
+      const resLower = await request(`/api/verify/key/${lowerKey}`)
+      const resSpace = await request(`/api/verify/key/${spaceKey}`)
+      const resRaw = await request(`/api/verify/key/${rawHexKey}`)
+
+      if (
+        resLower.status === 200 && resLower.data?.status === 'FOUND' && resLower.data?.key === f2Key &&
+        resSpace.status === 200 && resSpace.data?.status === 'FOUND' && resSpace.data?.key === f2Key &&
+        resRaw.status === 200 && resRaw.data?.status === 'FOUND' && resRaw.data?.key === f2Key
+      ) {
+        logPass('GET /api/verify/key/:key normalization', 'dashes, lowercase, spaces, and raw hex all normalize to FOUND')
+      } else {
+        throw new Error(`Normalization mismatch: lower=${resLower.status}, space=${resSpace.status}, raw=${resRaw.status}`)
+      }
+    } catch (err) {
+      logFail('GET /api/verify/key/:key normalization', err)
+    }
+
+    // F2-3: Unknown valid key gives NOT_FOUND
+    try {
+      const unknownKey = 'GH-FFFF-FFFF-FFFF-FFFF'
+      const unkRes = await request(`/api/verify/key/${unknownKey}`)
+      if (
+        unkRes.status === 200 &&
+        unkRes.data?.success === true &&
+        unkRes.data?.status === 'NOT_FOUND'
+      ) {
+        logPass('GET /api/verify/key/:key unknown key -> NOT_FOUND', 'status=NOT_FOUND')
+      } else {
+        throw new Error(`Expected 200 NOT_FOUND, got ${unkRes.status}: ${JSON.stringify(unkRes.data)}`)
+      }
+    } catch (err) {
+      logFail('GET /api/verify/key/:key unknown key -> NOT_FOUND', err)
+    }
+
+    // F2-4: Malformed keys give 400
+    try {
+      const malformedSamples = ['invalid', 'GH-123', 'GH-ZZZZ-ZZZZ-ZZZZ-ZZZZ', '1234567890ABCDEF12345']
+      let all400 = true
+      for (const sample of malformedSamples) {
+        const res = await request(`/api/verify/key/${encodeURIComponent(sample)}`)
+        if (res.status !== 400) {
+          all400 = false
+          throw new Error(`Expected 400 for "${sample}", got ${res.status}: ${JSON.stringify(res.data)}`)
+        }
+      }
+      if (all400) {
+        logPass('GET /api/verify/key/:key malformed keys -> 400', `${malformedSamples.length} malformed samples rejected with 400`)
+      }
+    } catch (err) {
+      logFail('GET /api/verify/key/:key malformed keys -> 400', err)
+    }
+
+    // F2-5: Response has strictly NO PII and no owner data or file name
+    try {
+      const res = await request(`/api/verify/key/${f2Key}`)
+      const body = JSON.stringify(res.data ?? {})
+      if (
+        !body.includes('@') &&
+        !res.data?.record?.ownerWallet &&
+        !res.data?.record?.owner &&
+        !res.data?.record?.ownerName &&
+        !res.data?.record?.fileName &&
+        !res.data?.record?.originalName &&
+        !res.data?.document
+      ) {
+        logPass('GET /api/verify/key/:key: strictly no PII, owner, or filename', 'No owner data, no file name')
+      } else {
+        throw new Error(`PII or owner data exposed in key lookup: ${body}`)
+      }
+    } catch (err) {
+      logFail('GET /api/verify/key/:key: strictly no PII, owner, or filename', err)
+    }
+
+    // F2-6: Works without token (public endpoint)
+    try {
+      const res = await request(`/api/verify/key/${f2Key}`)
+      if (res.status === 200 && res.data?.status === 'FOUND') {
+        logPass('GET /api/verify/key/:key works without token', 'public 200 response without Authorization header')
+      } else {
+        throw new Error(`Expected public access 200, got ${res.status}`)
+      }
+    } catch (err) {
+      logFail('GET /api/verify/key/:key works without token', err)
+    }
+
+    // F2-7: Existing CONFIRMED notarizations without a key get one computed on read and saved (idempotent)
+    try {
+      // Unset notarizationKey in MongoDB to simulate a legacy record
+      await Notarization.updateOne({ _id: notarization1Id }, { $unset: { notarizationKey: 1 } })
+
+      const beforeCheck = await Notarization.findById(notarization1Id)
+      if (beforeCheck?.notarizationKey) {
+        throw new Error('Failed to unset notarizationKey in test setup')
+      }
+
+      // Read document details via API — should compute and save key on read
+      const readRes = await request(`/api/documents/${doc1._id.toString()}`, {
+        headers: { Authorization: `Bearer ${userAToken}` },
+      })
+
+      if (readRes.status !== 200 || readRes.data?.document?.notarization?.notarizationKey !== f2Key) {
+        throw new Error(`Expected backfilled key on read ${f2Key}, got ${readRes.data?.document?.notarization?.notarizationKey}`)
+      }
+
+      // Verify it was saved to MongoDB
+      const afterCheck = await Notarization.findById(notarization1Id)
+      if (afterCheck?.notarizationKey !== f2Raw16) {
+        throw new Error(`Expected saved raw key ${f2Raw16} in DB, got ${afterCheck?.notarizationKey}`)
+      }
+
+      logPass('Idempotent key backfill on read for legacy CONFIRMED record', `computed & saved: ${f2Key}`)
+    } catch (err) {
+      logFail('Idempotent key backfill on read for legacy CONFIRMED record', err)
+    }
+
+    // ── Task F3A: Notarization Fee Tests (in test ETH) ─────────────────────────
+    console.log('\n--- Task F3A: Notarization Fee Tests (in test ETH) ---')
+    const signer0Address = await signer0.getAddress()
+    const feeRecipientAddress = signer0Address // deployer address as public fee recipient
+
+    try {
+      // 1. GET /api/config/fees when disabled
+      const feesDisabledRes = await request('/api/config/fees')
+      if (feesDisabledRes.status === 200 && feesDisabledRes.data?.enabled === false) {
+        logPass('GET /api/config/fees (disabled) -> { enabled: false }')
+      } else {
+        throw new Error(`Expected { enabled: false }, got: ${feesDisabledRes.status} ${JSON.stringify(feesDisabledRes.data)}`)
+      }
+
+      // 2. Enable fee and verify GET /api/config/fees
+      process.env.NOTARIZATION_FEE_ETH = '0.001'
+      process.env.FEE_RECIPIENT_ADDRESS = feeRecipientAddress
+
+      const feesEnabledRes = await request('/api/config/fees')
+      const expectedWei = ethers.parseEther('0.001').toString()
+      if (
+        feesEnabledRes.status === 200 &&
+        feesEnabledRes.data?.enabled === true &&
+        feesEnabledRes.data?.amountEth === '0.001' &&
+        feesEnabledRes.data?.amountWei === expectedWei &&
+        feesEnabledRes.data?.recipient?.toLowerCase() === feeRecipientAddress.toLowerCase() &&
+        feesEnabledRes.data?.symbol === 'ETH'
+      ) {
+        logPass('GET /api/config/fees (enabled)', `amountEth=0.001, recipient=${feeRecipientAddress.slice(0, 10)}...`)
+      } else {
+        throw new Error(`Unexpected fees config response: ${feesEnabledRes.status} ${JSON.stringify(feesEnabledRes.data)}`)
+      }
+
+      // 3. Register userF3 and link signer4 wallet
+      const signer4 = await provider.getSigner(4)
+      const userF3Email = `user_f3_${Date.now()}@example.com`
+      const { token: userF3Token, id: userF3Id } = await registerUser(userF3Email, 'Fee Payer')
+      const linkRes = await linkWallet(userF3Token, signer4)
+      if (linkRes.status !== 200) {
+        throw new Error(`Failed to link wallet for userF3: ${linkRes.status} ${JSON.stringify(linkRes.data)}`)
+      }
+
+      // 4. Upload fresh unique document and request notarization
+      const pdfF3 = Buffer.from(`%PDF-1.4\n%Fee Test Doc 1 ${Date.now()}\n%%EOF`)
+      const uploadF3Res = await uploadFileRequest(
+        '/api/documents/upload',
+        pdfF3,
+        'fee_doc.pdf',
+        'application/pdf',
+        userF3Token
+      )
+      const docF3Id = uploadF3Res.data?.document?.id
+      if (!docF3Id) {
+        throw new Error(`Failed to upload doc for userF3: ${JSON.stringify(uploadF3Res.data)}`)
+      }
+
+      const reqF3Res = await request('/api/notarization/request', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${userF3Token}` },
+        body: { documentId: docF3Id },
+      })
+      const notF3Id = reqF3Res.data?.notarization?.id
+      if (reqF3Res.status !== 201 || !notF3Id) {
+        throw new Error(`Failed to request notarization: ${reqF3Res.status} ${JSON.stringify(reqF3Res.data)}`)
+      }
+
+      // 5. Approve without payment -> 402 PAYMENT_REQUIRED
+      const approveUnpaidRes = await request(`/api/notarization/${notF3Id}/approve`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${notaryToken}` },
+      })
+      if (approveUnpaidRes.status === 402 && approveUnpaidRes.data?.error?.code === 'PAYMENT_REQUIRED') {
+        logPass('Fee enabled: approve without payment → 402 PAYMENT_REQUIRED', 'code=PAYMENT_REQUIRED')
+      } else {
+        throw new Error(`Expected 402 PAYMENT_REQUIRED, got: ${approveUnpaidRes.status} ${JSON.stringify(approveUnpaidRes.data)}`)
+      }
+
+      // 6. Payment validation checks
+      // 6a. Non-existent transaction hash -> 422 TX_NOT_FOUND
+      const nonExistentTx = '0x' + 'f'.repeat(64)
+      const unknownTxRes = await request(`/api/notarization/${notF3Id}/payment`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${userF3Token}` },
+        body: { transactionHash: nonExistentTx },
+      })
+      if (unknownTxRes.status === 422 && (unknownTxRes.data?.error?.details?.reason === 'TX_NOT_FOUND' || unknownTxRes.data?.error?.message?.includes('TX_NOT_FOUND'))) {
+        logPass('Payment reason: unknown tx hash → 422 TX_NOT_FOUND')
+      } else {
+        throw new Error(`Expected 422 TX_NOT_FOUND, got: ${unknownTxRes.status} ${JSON.stringify(unknownTxRes.data)}`)
+      }
+
+      // 6b. Wrong recipient -> 422 WRONG_RECIPIENT
+      const wrongRecipientTx = await signer4.sendTransaction({
+        to: signer1Address, // sent to notary instead of fee recipient
+        value: ethers.parseEther('0.001'),
+      })
+      await wrongRecipientTx.wait()
+      const wrongRecipRes = await request(`/api/notarization/${notF3Id}/payment`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${userF3Token}` },
+        body: { transactionHash: wrongRecipientTx.hash },
+      })
+      if (wrongRecipRes.status === 422 && (wrongRecipRes.data?.error?.details?.reason === 'WRONG_RECIPIENT' || wrongRecipRes.data?.error?.message?.includes('WRONG_RECIPIENT'))) {
+        logPass('Payment reason: wrong recipient → 422 WRONG_RECIPIENT')
+      } else {
+        throw new Error(`Expected 422 WRONG_RECIPIENT, got: ${wrongRecipRes.status} ${JSON.stringify(wrongRecipRes.data)}`)
+      }
+
+      // 6c. Wrong payer -> 422 WRONG_PAYER
+      const wrongPayerTx = await signer3.sendTransaction({
+        to: feeRecipientAddress,
+        value: ethers.parseEther('0.001'),
+      })
+      await wrongPayerTx.wait()
+      const wrongPayerRes = await request(`/api/notarization/${notF3Id}/payment`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${userF3Token}` },
+        body: { transactionHash: wrongPayerTx.hash },
+      })
+      if (wrongPayerRes.status === 422 && (wrongPayerRes.data?.error?.details?.reason === 'WRONG_PAYER' || wrongPayerRes.data?.error?.message?.includes('WRONG_PAYER'))) {
+        logPass('Payment reason: wrong payer → 422 WRONG_PAYER')
+      } else {
+        throw new Error(`Expected 422 WRONG_PAYER, got: ${wrongPayerRes.status} ${JSON.stringify(wrongPayerRes.data)}`)
+      }
+
+      // 6d. Too small an amount -> 422 AMOUNT_TOO_LOW
+      const lowAmountTx = await signer4.sendTransaction({
+        to: feeRecipientAddress,
+        value: ethers.parseEther('0.0001'), // less than 0.001 ETH
+      })
+      await lowAmountTx.wait()
+      const lowAmountRes = await request(`/api/notarization/${notF3Id}/payment`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${userF3Token}` },
+        body: { transactionHash: lowAmountTx.hash },
+      })
+      if (lowAmountRes.status === 422 && (lowAmountRes.data?.error?.details?.reason === 'AMOUNT_TOO_LOW' || lowAmountRes.data?.error?.message?.includes('AMOUNT_TOO_LOW'))) {
+        logPass('Payment reason: too small an amount → 422 AMOUNT_TOO_LOW')
+      } else {
+        throw new Error(`Expected 422 AMOUNT_TOO_LOW, got: ${lowAmountRes.status} ${JSON.stringify(lowAmountRes.data)}`)
+      }
+
+      // 6e. Contract-call transaction with data -> 422 NOT_A_PLAIN_TRANSFER
+      const dataTx = await signer4.sendTransaction({
+        to: feeRecipientAddress,
+        value: ethers.parseEther('0.001'),
+        data: '0x1234',
+      })
+      await dataTx.wait()
+      const dataTxRes = await request(`/api/notarization/${notF3Id}/payment`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${userF3Token}` },
+        body: { transactionHash: dataTx.hash },
+      })
+      if (dataTxRes.status === 422 && (dataTxRes.data?.error?.details?.reason === 'NOT_A_PLAIN_TRANSFER' || dataTxRes.data?.error?.message?.includes('NOT_A_PLAIN_TRANSFER'))) {
+        logPass('Payment reason: transaction with data → 422 NOT_A_PLAIN_TRANSFER')
+      } else {
+        throw new Error(`Expected 422 NOT_A_PLAIN_TRANSFER, got: ${dataTxRes.status} ${JSON.stringify(dataTxRes.data)}`)
+      }
+
+      // 7. Valid plain transfer payment from owner's wallet -> 200 PAID
+      const validPaymentTx = await signer4.sendTransaction({
+        to: feeRecipientAddress,
+        value: ethers.parseEther('0.001'),
+      })
+      await validPaymentTx.wait()
+      const validPayRes = await request(`/api/notarization/${notF3Id}/payment`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${userF3Token}` },
+        body: { transactionHash: validPaymentTx.hash },
+      })
+      if (validPayRes.status === 200 && validPayRes.data?.payment?.status === 'PAID') {
+        logPass('Valid payment from owner wallet → PAID', `tx=${validPaymentTx.hash.slice(0, 14)}...`)
+      } else {
+        throw new Error(`Expected 200 PAID, got: ${validPayRes.status} ${JSON.stringify(validPayRes.data)}`)
+      }
+
+      // 8. Idempotency: same hash again -> 200
+      const idempotentPayRes = await request(`/api/notarization/${notF3Id}/payment`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${userF3Token}` },
+        body: { transactionHash: validPaymentTx.hash },
+      })
+      if (idempotentPayRes.status === 200 && idempotentPayRes.data?.payment?.status === 'PAID') {
+        logPass('Same payment hash on same notarization is idempotent 200')
+      } else {
+        throw new Error(`Expected idempotent 200, got: ${idempotentPayRes.status} ${JSON.stringify(idempotentPayRes.data)}`)
+      }
+
+      // 9. Reusing same payment hash on another notarization -> 409 PAYMENT_ALREADY_USED
+      const pdfF3_2 = Buffer.from(`%PDF-1.4\n%Fee Test Doc 2 ${Date.now()}\n%%EOF`)
+      const uploadF3_2Res = await uploadFileRequest(
+        '/api/documents/upload',
+        pdfF3_2,
+        'fee_doc2.pdf',
+        'application/pdf',
+        userF3Token
+      )
+      const docF3_2Id = uploadF3_2Res.data?.document?.id
+      const reqF3_2Res = await request('/api/notarization/request', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${userF3Token}` },
+        body: { documentId: docF3_2Id },
+      })
+      const notF3_2Id = reqF3_2Res.data?.notarization?.id
+
+      const reusePayRes = await request(`/api/notarization/${notF3_2Id}/payment`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${userF3Token}` },
+        body: { transactionHash: validPaymentTx.hash },
+      })
+      if (reusePayRes.status === 409 && reusePayRes.data?.error?.code === 'PAYMENT_ALREADY_USED') {
+        logPass('Same hash on another notarization → 409 PAYMENT_ALREADY_USED')
+      } else {
+        throw new Error(`Expected 409 PAYMENT_ALREADY_USED, got: ${reusePayRes.status} ${JSON.stringify(reusePayRes.data)}`)
+      }
+
+      // 10. Full flow with fee: pay -> approve -> notary notarizes on-chain -> confirm -> CONFIRMED, NOTARIZED
+      const approvePaidRes = await request(`/api/notarization/${notF3Id}/approve`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${notaryToken}` },
+      })
+      if (approvePaidRes.status !== 200 || !approvePaidRes.data?.args) {
+        throw new Error(`Approve failed: ${approvePaidRes.status} ${JSON.stringify(approvePaidRes.data)}`)
+      }
+
+      const notaryContract = BlockchainService.getContract(signer1)
+      const onChainNotarizeTx = await notaryContract.notarize(
+        approvePaidRes.data.args[0],
+        approvePaidRes.data.args[1],
+        approvePaidRes.data.args[2]
+      )
+      await onChainNotarizeTx.wait()
+
+      const confirmPaidRes = await request(`/api/notarization/${notF3Id}/confirm`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${notaryToken}` },
+        body: { transactionHash: onChainNotarizeTx.hash },
+      })
+      if (confirmPaidRes.status === 200 && confirmPaidRes.data?.notarization?.status === 'CONFIRMED') {
+        logPass('Full flow with fee: pay → approve → on-chain notarize → confirm → CONFIRMED')
+      } else {
+        throw new Error(`Confirm failed: ${confirmPaidRes.status} ${JSON.stringify(confirmPaidRes.data)}`)
+      }
+
+      // 11. Reject a PAID request -> refundDue: true
+      const validPaymentTx2 = await signer4.sendTransaction({
+        to: feeRecipientAddress,
+        value: ethers.parseEther('0.001'),
+      })
+      await validPaymentTx2.wait()
+      const payReq2Res = await request(`/api/notarization/${notF3_2Id}/payment`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${userF3Token}` },
+        body: { transactionHash: validPaymentTx2.hash },
+      })
+      if (payReq2Res.status !== 200) {
+        throw new Error(`Pay failed on req2: ${payReq2Res.status} ${JSON.stringify(payReq2Res.data)}`)
+      }
+
+      const rejectPaidRes = await request(`/api/notarization/${notF3_2Id}/reject`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${notaryToken}` },
+        body: { reason: 'Test rejection with fee refundDue' },
+      })
+      if (rejectPaidRes.status === 200 && rejectPaidRes.data?.notarization?.status === 'REJECTED') {
+        // Verify in DB and API that payment.refundDue is true
+        const checkDb = await Notarization.findById(notF3_2Id)
+        if (checkDb?.payment?.refundDue === true) {
+          logPass('Reject a PAID request → refundDue: true', `db.refundDue=${checkDb.payment.refundDue}`)
+        } else {
+          throw new Error(`Expected db.refundDue=true, got ${checkDb?.payment?.refundDue}`)
+        }
+      } else {
+        throw new Error(`Reject failed: ${rejectPaidRes.status} ${JSON.stringify(rejectPaidRes.data)}`)
+      }
+
+      // 12. Check GET /documents/:id includes payment for owner
+      const docDetailsRes = await request(`/api/documents/${docF3Id}`, {
+        headers: { Authorization: `Bearer ${userF3Token}` },
+      })
+      if (
+        docDetailsRes.status === 200 &&
+        docDetailsRes.data?.document?.notarization?.payment?.status === 'PAID'
+      ) {
+        logPass('GET /api/documents/:id includes payment object for owner')
+      } else {
+        throw new Error(`Expected payment in document details: ${docDetailsRes.status} ${JSON.stringify(docDetailsRes.data)}`)
+      }
+
+    } catch (err) {
+      logFail('Task F3A: Notarization Fee Tests', err)
+    } finally {
+      // Restore fee config to disabled state so subsequent tests run normally
+      delete process.env.NOTARIZATION_FEE_ETH
+      delete process.env.FEE_RECIPIENT_ADDRESS
+    }
+
     // ── Tests 25–31: Admin API ────────────────────────────────────────────────
     console.log('\n--- Admin API Tests ---')
 
@@ -1516,11 +1980,13 @@ async function runChainTests() {
         typeof res.data?.notarizations?.total === 'number' &&
         res.data?.users?.total >= 1 &&
         res.data?.documents?.total >= 1 &&
-        res.data?.notarizations?.total >= 1
+        res.data?.notarizations?.total >= 1 &&
+        typeof res.data?.fees?.paidCount === 'number' &&
+        typeof res.data?.fees?.totalWei === 'string'
       ) {
         logPass(
-          'GET /api/admin/stats: counts correct',
-          `users=${res.data.users.total}, docs=${res.data.documents.total}, notarizations=${res.data.notarizations.total}`
+          'GET /api/admin/stats: counts correct (including fees)',
+          `users=${res.data.users.total}, docs=${res.data.documents.total}, notarizations=${res.data.notarizations.total}, feesPaid=${res.data.fees.paidCount}, totalWei=${res.data.fees.totalWei}`
         )
       } else {
         throw new Error(`Unexpected stats: ${res.status} ${JSON.stringify(res.data)}`)

@@ -7,6 +7,8 @@ import { Notarization } from '../models/Notarization'
 import { DocumentModel } from '../models/Document'
 import { BlockchainService } from '../services/blockchain.service'
 import { FULL_NOTARY_ABI } from '../config/blockchain'
+import { formatNotarizationKey } from '../utils/notarizationKey'
+import { ensureNotarizationKeyForRecord } from '../services/notarization.service'
 
 /**
  * GET /api/blockchain/contract (ADMIN only)
@@ -60,6 +62,10 @@ export const getBlockchainDocument = asyncHandler(async (req: Request, res: Resp
     .sort({ createdAt: -1 })
     .lean()
 
+  if (storedNotarization) {
+    await ensureNotarizationKeyForRecord(storedNotarization)
+  }
+
   // Query live on-chain state via read-only provider
   let onChainRecord: Record<string, unknown> | null = null
   try {
@@ -93,6 +99,7 @@ export const getBlockchainDocument = asyncHandler(async (req: Request, res: Resp
         notaryWallet:     storedNotarization.notaryWallet ?? null,
         contractAddress:  storedNotarization.contractAddress ?? null,
         chainId:          storedNotarization.chainId ?? null,
+        notarizationKey:  storedNotarization.notarizationKey ? formatNotarizationKey(storedNotarization.notarizationKey) : null,
         // on-chain timestamp: proves hash was recorded no later than this time
         timestamp:        storedNotarization.onChainTimestamp ?? null,
         rejectionReason:  storedNotarization.rejectionReason ?? null,
@@ -107,6 +114,7 @@ export const getBlockchainDocument = asyncHandler(async (req: Request, res: Resp
       status:     doc.status,
       ipfsCid:    doc.ipfsCid,
     },
+    notarizationKey: stored?.notarizationKey ?? null,
     stored,
     onChainRecord,
   }, 200)

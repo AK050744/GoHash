@@ -69,6 +69,7 @@ interface ApiDoc {
     blockNumber?: number;
     notaryWallet?: string;
     contractAddress?: string;
+    notarizationKey?: string;
     timestamp?: number;
     rejectionReason?: string | null;
   } | null;
@@ -109,6 +110,7 @@ export default function DocumentDetails() {
         blockNumber: n?.blockNumber !== undefined ? String(n.blockNumber) : undefined,
         transactionHash: n?.transactionHash ?? undefined,
         contractAddress: n?.contractAddress ?? undefined,
+        notarizationKey: n?.notarizationKey ?? undefined,
       });
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Failed to load document");
@@ -257,6 +259,11 @@ export default function DocumentDetails() {
         </div>
 
         <dl className="grid gap-6 md:grid-cols-2">
+          {record?.notarizationKey && (
+            <div className="md:col-span-2">
+              <RecordField label="Unique Notarization Key" value={record.notarizationKey} />
+            </div>
+          )}
           <RecordField label="Notary wallet" value={record?.notary} />
           <RecordField label="Block number" value={record?.blockNumber} />
           <RecordField label="Transaction hash" value={record?.transactionHash} />

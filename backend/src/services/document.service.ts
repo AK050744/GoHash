@@ -5,7 +5,8 @@ import { DocumentModel, IDocument, DocumentStatus } from '../models/Document'
 import { Notarization } from '../models/Notarization'
 import { computeSha256 } from './hash.service'
 import { ApiError } from '../utils/ApiError'
-
+import { formatNotarizationKey } from '../utils/notarizationKey'
+import { ensureNotarizationKeyForRecord, serializePayment } from './notarization.service'
 
 export class DocumentService {
   /**
@@ -156,6 +157,10 @@ export class DocumentService {
       .sort({ createdAt: -1 })
       .lean()
 
+    if (notarizationDoc) {
+      await ensureNotarizationKeyForRecord(notarizationDoc)
+    }
+
     const notarization = notarizationDoc
       ? {
           id:              notarizationDoc._id.toString(),
@@ -164,6 +169,8 @@ export class DocumentService {
           blockNumber:     notarizationDoc.blockNumber ?? null,
           notaryWallet:    notarizationDoc.notaryWallet ?? null,
           contractAddress: notarizationDoc.contractAddress ?? null,
+          notarizationKey: notarizationDoc.notarizationKey ? formatNotarizationKey(notarizationDoc.notarizationKey) : null,
+          payment:         isOwner ? serializePayment(notarizationDoc.payment) : null,
           // on-chain timestamp: proves hash was recorded no later than this time
           timestamp:       notarizationDoc.onChainTimestamp ?? null,
           rejectionReason: notarizationDoc.rejectionReason ?? null,

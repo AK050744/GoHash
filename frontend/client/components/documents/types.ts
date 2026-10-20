@@ -14,4 +14,5 @@ export interface DocumentDetail extends DocumentSummary {
   transactionHash?: string;
   blockNumber?: string;
   contractAddress?: string;
+  notarizationKey?: string;
 }

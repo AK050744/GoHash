@@ -20,6 +20,7 @@ export interface RequestReceipt {
   transactionHash: string;
   blockNumber: string;
   contractAddress: string;
+  notarizationKey?: string;
 }
 
 export type OnChainAuthorization = "AUTHORIZED" | "NOT_AUTHORIZED" | "UNKNOWN";

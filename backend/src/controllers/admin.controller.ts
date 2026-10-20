@@ -335,6 +335,22 @@ export const getStats = asyncHandler(async (_req: Request, res: Response) => {
     if (row._id in notStatusMap) notStatusMap[row._id as string] = row.count
   }
 
+  // Aggregate fee stats
+  const paidRecords = await Notarization.find(
+    { 'payment.status': 'PAID' },
+    { 'payment.amountWei': 1 }
+  ).lean()
+  let totalWei = 0n
+  for (const r of paidRecords) {
+    if (r.payment?.amountWei) {
+      try {
+        totalWei += BigInt(r.payment.amountWei)
+      } catch {
+        // ignore malformed numbers
+      }
+    }
+  }
+
   sendSuccess(res, {
     users: {
       total: totalUsers,
@@ -351,6 +367,10 @@ export const getStats = asyncHandler(async (_req: Request, res: Response) => {
     notarizations: {
       total: totalNotarizationsCount,
       byStatus: notStatusMap,
+    },
+    fees: {
+      paidCount: paidRecords.length,
+      totalWei: totalWei.toString(),
     },
   }, 200)
 })

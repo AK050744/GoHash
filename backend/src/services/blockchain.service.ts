@@ -40,6 +40,26 @@ export interface ReceiptVerification {
   timestamp?: number
 }
 
+export type PaymentInvalidReason =
+  | 'TX_NOT_FOUND'
+  | 'TX_PENDING'
+  | 'TX_REVERTED'
+  | 'WRONG_CHAIN'
+  | 'WRONG_RECIPIENT'
+  | 'WRONG_PAYER'
+  | 'AMOUNT_TOO_LOW'
+  | 'NOT_A_PLAIN_TRANSFER'
+
+export interface PaymentVerificationResult {
+  valid: boolean
+  reason?: PaymentInvalidReason
+  message?: string
+  blockNumber?: number
+  payer?: string
+  recipient?: string
+  amountWei?: string
+}
+
 // ─── BlockchainService ───────────────────────────────────────────────────────
 
 export class BlockchainService {
@@ -272,6 +292,123 @@ export class BlockchainService {
       timestamp:    blockTimestamp,
     }
   }
+
+  /**
+   * Verify a plain ETH payment transaction on-chain via read-only provider.
+   *
+   * Verifies ALL of the following:
+   *   1. tx exists on chain                (TX_NOT_FOUND)
+   *   2. receipt is mined                  (TX_PENDING)
+   *   3. receipt.status === 1              (TX_REVERTED)
+   *   4. network chainId matches           (WRONG_CHAIN)
+   *   5. tx.to matches fee recipient       (WRONG_RECIPIENT)
+   *   6. tx.from matches payer wallet      (WRONG_PAYER)
+   *   7. tx.value >= required fee          (AMOUNT_TOO_LOW)
+   *   8. tx.data is empty / 0x             (NOT_A_PLAIN_TRANSFER)
+   */
+  static async verifyPayment(
+    txHash: string,
+    expected: {
+      recipient: string
+      payerWallet: string
+      requiredAmountWei: string
+      chainId: number
+    }
+  ): Promise<PaymentVerificationResult> {
+    const provider = getProvider()
+
+    // 1. Fetch the transaction itself
+    const tx = await provider.getTransaction(txHash)
+    if (!tx) {
+      return {
+        valid: false,
+        reason: 'TX_NOT_FOUND',
+        message: 'TX_NOT_FOUND: Transaction not found on chain',
+      }
+    }
+
+    // 2. Fetch receipt (null = not yet mined)
+    const receipt = await provider.getTransactionReceipt(txHash)
+    if (!receipt) {
+      return {
+        valid: false,
+        reason: 'TX_PENDING',
+        message: 'TX_PENDING: Transaction has not been mined yet',
+      }
+    }
+
+    // 3. Receipt status must be 1 (success)
+    if (receipt.status !== 1) {
+      return {
+        valid: false,
+        reason: 'TX_REVERTED',
+        message: 'TX_REVERTED: Transaction reverted on-chain',
+      }
+    }
+
+    // 4. Verify chain ID
+    const network = await provider.getNetwork()
+    const actualChainId = Number(network.chainId)
+    if (actualChainId !== expected.chainId) {
+      return {
+        valid: false,
+        reason: 'WRONG_CHAIN',
+        message: `WRONG_CHAIN: got=${actualChainId}, expected=${expected.chainId}`,
+      }
+    }
+
+    // 5. Verify recipient matches FEE_RECIPIENT_ADDRESS
+    const txTo = (tx.to ?? '').toLowerCase()
+    const expectedRecipient = expected.recipient.toLowerCase()
+    if (txTo !== expectedRecipient) {
+      return {
+        valid: false,
+        reason: 'WRONG_RECIPIENT',
+        message: `WRONG_RECIPIENT: tx.to=${txTo}, expected=${expectedRecipient}`,
+      }
+    }
+
+    // 6. Verify sender matches the user's linked wallet
+    const txFrom = (tx.from ?? '').toLowerCase()
+    const expectedPayer = expected.payerWallet.toLowerCase()
+    if (txFrom !== expectedPayer) {
+      return {
+        valid: false,
+        reason: 'WRONG_PAYER',
+        message: `WRONG_PAYER: tx.from=${txFrom}, expected=${expectedPayer}`,
+      }
+    }
+
+    // 7. Verify value >= required fee amount
+    const txValue = BigInt(tx.value)
+    const requiredAmount = BigInt(expected.requiredAmountWei)
+    if (txValue < requiredAmount) {
+      return {
+        valid: false,
+        reason: 'AMOUNT_TOO_LOW',
+        message: `AMOUNT_TOO_LOW: tx.value=${txValue.toString()}, required=${requiredAmount.toString()}`,
+      }
+    }
+
+    // 8. Plain transfer check: data must be empty ("0x" or "")
+    const data = tx.data ?? ''
+    if (data !== '0x' && data !== '') {
+      return {
+        valid: false,
+        reason: 'NOT_A_PLAIN_TRANSFER',
+        message: `NOT_A_PLAIN_TRANSFER: transaction data is not empty (${data})`,
+      }
+    }
+
+    return {
+      valid: true,
+      blockNumber: receipt.blockNumber,
+      payer: txFrom,
+      recipient: txTo,
+      amountWei: txValue.toString(),
+    }
+  }
+
 
   /**
    * Inspect an unknown error from a blockchain call and re-throw it as an ApiError
