@@ -7,7 +7,11 @@
  * with `message` taken from the backend error envelope on failure.
  */
 
-const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
+const rawBase =
+  (typeof import.meta.env.VITE_API_URL === "string" &&
+    import.meta.env.VITE_API_URL.trim()) ||
+  "http://localhost:5000/api";
+const BASE = rawBase.replace(/\/+$/, "");
 
 export const TOKEN_KEY = "gohash_token";
 
@@ -37,15 +41,26 @@ async function request<T>(
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers,
-    body: isFormData
-      ? (body as FormData)
-      : body !== undefined
-        ? JSON.stringify(body)
-        : undefined,
-  });
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  const targetUrl = `${BASE}${cleanPath}`;
+
+  let res: Response;
+  try {
+    res = await fetch(targetUrl, {
+      method,
+      headers,
+      body: isFormData
+        ? (body as FormData)
+        : body !== undefined
+          ? JSON.stringify(body)
+          : undefined,
+    });
+  } catch (networkError) {
+    console.error("Underlying network error:", networkError);
+    throw new Error(
+      `Cannot reach the GoHash server at ${BASE}. Check that the backend is running.`
+    );
+  }
 
   const json = await res.json().catch(() => ({}));
 

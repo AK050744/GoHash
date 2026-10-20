@@ -13,20 +13,19 @@ const app: Application = express()
 app.use(helmet())
 
 // ─── Cross-Origin Resource Sharing ───────────────────────────────────────────
-const allowedOrigins = env.CORS_ORIGIN.split(',').map((o) => o.trim())
+const allowedOrigins = env.CORS_ORIGIN.split(',')
+  .map((o) => o.trim())
+  .filter(Boolean)
+
 app.use(
   cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true)
-      if (
-        allowedOrigins.includes(origin) ||
-        allowedOrigins.includes('*') ||
-        (env.NODE_ENV === 'development' && /^http:\/\/localhost:\d+$/.test(origin))
-      ) {
+      if (allowedOrigins.includes(origin)) {
         return callback(null, true)
       }
-      return callback(new Error(`CORS origin not allowed: ${origin}`))
+      return callback(null, false)
     },
     credentials: true,
   }),

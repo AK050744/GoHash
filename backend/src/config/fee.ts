@@ -27,22 +27,30 @@ export function getFeeConfig(): FeeConfig {
     feeEth = 0
   }
 
-  if (isNaN(feeEth) || feeEth <= 0) {
+  if (isNaN(feeEth) || feeEth < 0) {
+    throw new Error(
+      `Backend failed to start: NOTARIZATION_FEE_ETH is invalid ("${feeEthStr}"). Must be a non-negative number.`
+    )
+  }
+
+  if (feeEth === 0) {
     return { enabled: false }
   }
 
   const recipient = (process.env.FEE_RECIPIENT_ADDRESS ?? '').trim()
   if (!recipient || !ethers.isAddress(recipient)) {
     throw new Error(
-      `[FEE_CONFIG] NOTARIZATION_FEE_ETH is set to "${feeEthStr}" but FEE_RECIPIENT_ADDRESS is missing or invalid: "${recipient}"`
+      `Backend failed to start: FEE_RECIPIENT_ADDRESS is invalid or missing ("${recipient}"). Required when NOTARIZATION_FEE_ETH is enabled.`
     )
   }
 
   let amountWei: string
   try {
     amountWei = ethers.parseEther(feeEthStr).toString()
-  } catch (err) {
-    throw new Error(`[FEE_CONFIG] Invalid NOTARIZATION_FEE_ETH value "${feeEthStr}": ${err}`)
+  } catch {
+    throw new Error(
+      `Backend failed to start: NOTARIZATION_FEE_ETH is invalid ("${feeEthStr}"). Must be a valid ETH amount.`
+    )
   }
 
   const chainId = Number(process.env.CHAIN_ID || 31337)

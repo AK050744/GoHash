@@ -12,7 +12,7 @@ const envSchema = z.object({
   MONGODB_URI: z.string().min(1, 'MONGODB_URI is required').default(rawMongoUri || 'mongodb://localhost:27017/gohash'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters').default(process.env.JWT_SECRET || 'gohash_super_secret_jwt_key_default_dev'),
   JWT_EXPIRES_IN: z.string().default('7d'),
-  CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  CORS_ORIGIN: z.string().default('http://localhost:5173,http://localhost:8080'),
   MAX_FILE_SIZE_MB: z.coerce.number().positive().default(10),
 
   // Rate limiting for auth endpoints (POST /auth/login and /auth/register)

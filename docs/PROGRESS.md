@@ -19,6 +19,7 @@
 | **Task F2** | Full-stack & Docs (Unique Notarization Key) | **Complete** | Unique notarization key derived from on-chain data (keccak256), public `/api/verify/key/:key` endpoint, CopyButton, certificate & verify tab |
 | **Task F3A** | `backend/` & Docs (Notarization fee in test ETH) | **Complete** | Test ETH fee verified on-chain by read-only provider; GET /api/config/fees; POST /api/notarization/:id/payment; approve 402; reject refundDue; stats |
 | **Task F3B** | `frontend/` & Docs (Fee payment UI, gas estimate & notary gating) | **Complete** | Fee payment card with Stepper, plain ETH MetaMask transfer, 202 polling, session resume, gas estimates, notary gating, refund banner, certificate fee display |
+| **Task F4** | Full-stack & Docs (Connection Diagnostics, CORS Robustness & Startup Fail-Fast) | **Complete** | Vite dev port 8080 & 5173 in CORS_ORIGIN; diagnosable fetch error messaging; fail-fast fee config checks |
 | **Sprint 6A** | Backend (RBAC audit, security hardening, Zod validation) | **Complete** | RBAC matrix test (26 endpoints), Helmet, CORS pinned, rate limiting, JWT HS256 pinned, Zod schemas, typecheck 0 errors |
 | **Sprint 6B** | Docs (README, architecture, project-flow, VIVA, REQUIREMENTS_COVERAGE) | **Complete** | README.md rewritten; docs/architecture.md, docs/project-flow.md, docs/VIVA.md, docs/REQUIREMENTS_COVERAGE.md created |
 
@@ -475,4 +476,27 @@ If the Hardhat node was restarted or the contract redeployed, restart the backen
 2. Open `/documents/:id/certificate`.
 3. Verify the certificate displays `Fee paid: 0.001 ETH (tx 0x...)` alongside the Unique Notarization Key.
 4. Click **Print certificate** to verify the print layout remains plain, monochrome, and formatted for single-page paper export.
+
+---
+
+### Task F4 (Connection Diagnostics, CORS Robustness & Startup Fail-Fast)
+
+#### 1. Frontend Dev Port and CORS Configuration
+- **Frontend Dev Port**: Configured as `8080` in [frontend/vite.config.ts](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/vite.config.ts#L10) (`server.port: 8080`).
+- **Backend CORS_ORIGIN**: Configured in [backend/.env.example](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/backend/.env.example#L14), [backend/.env](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/backend/.env#L14), and [backend/src/config/env.ts](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/backend/src/config/env.ts#L15) as:
+  `CORS_ORIGIN=http://localhost:5173,http://localhost:8080`
+- **Origin Handling**: [backend/src/app.ts](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/backend/src/app.ts) parses `CORS_ORIGIN` as a comma-separated list of exact allowed origins, trims whitespace, and matches explicitly against `origin` without wildcards. An allowed origin gets a matching `Access-Control-Allow-Origin` header; disallowed origins receive no `Access-Control-Allow-Origin` header. Preflight `OPTIONS` requests from allowed origins return HTTP `204 No Content`.
+
+#### 2. Diagnosable Connection Problems on Frontend
+- **Sanitized Base API URL**: In [frontend/client/lib/api.ts](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/lib/api.ts), `rawBase` defaults strictly to `http://localhost:5000/api` when `VITE_API_URL` is undefined or blank. Trailing slashes are stripped and target paths are joined with a leading slash, guaranteeing no relative `/api` call can reach the template's internal dev server.
+- **Fetch Rejection Handling**: When `fetch` itself rejects (e.g. backend offline, network down, or DNS failure), the client logs the underlying error using `console.error("Underlying network error:", networkError)` and throws:
+  `Cannot reach the GoHash server at <url>. Check that the backend is running.`
+- **HTTP Error Response Preservation**: When the server is reachable and responds with an HTTP error status (4xx, 5xx), the client continues extracting and displaying the server's error message (`json?.error?.message ?? json?.message`).
+
+#### 3. Backend Startup Fail-Fast Fee Validation
+- In [backend/src/config/fee.ts](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/backend/src/config/fee.ts), invalid `NOTARIZATION_FEE_ETH` or missing/invalid `FEE_RECIPIENT_ADDRESS` (when fee is enabled) exits with ONE clear line naming the variable:
+  - `Backend failed to start: NOTARIZATION_FEE_ETH is invalid ("<value>"). Must be a non-negative number.`
+  - `Backend failed to start: FEE_RECIPIENT_ADDRESS is invalid or missing ("<value>"). Required when NOTARIZATION_FEE_ETH is enabled.`
+  matching the single-line fail-fast pattern of MongoDB connection failure.
+
 

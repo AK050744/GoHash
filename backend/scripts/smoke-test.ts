@@ -75,7 +75,7 @@ async function request(
     data = null
   }
 
-  return { status: res.status, data }
+  return { status: res.status, data, headers: res.headers }
 }
 
 async function uploadFileRequest(
@@ -181,6 +181,110 @@ async function runSmokeTests() {
       }
     } catch (err) {
       logFail('GET /api/health', err)
+    }
+
+    // 1b. CORS exact origin and preflight tests
+    try {
+      // 1b-1. Allowed origin gets matching Access-Control-Allow-Origin header
+      const allowedRes = await request('/api/health', {
+        headers: { Origin: 'http://localhost:5173' },
+      })
+      const allowHeader = allowedRes.headers?.get('access-control-allow-origin')
+      if (allowHeader === 'http://localhost:5173') {
+        logPass('CORS allowed origin (5173)', `access-control-allow-origin=${allowHeader}`)
+      } else {
+        throw new Error(`Expected access-control-allow-origin: http://localhost:5173, got "${allowHeader}"`)
+      }
+
+      // 1b-2. Second allowed origin (8080) gets matching header
+      const allowedRes8080 = await request('/api/health', {
+        headers: { Origin: 'http://localhost:8080' },
+      })
+      const allowHeader8080 = allowedRes8080.headers?.get('access-control-allow-origin')
+      if (allowHeader8080 === 'http://localhost:8080') {
+        logPass('CORS allowed origin (8080)', `access-control-allow-origin=${allowHeader8080}`)
+      } else {
+        throw new Error(`Expected access-control-allow-origin: http://localhost:8080, got "${allowHeader8080}"`)
+      }
+
+      // 1b-3. Disallowed origin does NOT get Access-Control-Allow-Origin header
+      const disallowedRes = await request('/api/health', {
+        headers: { Origin: 'http://unauthorized-origin.evil.com' },
+      })
+      const disallowHeader = disallowedRes.headers?.get('access-control-allow-origin')
+      if (!disallowHeader) {
+        logPass('CORS disallowed origin omitted header', 'access-control-allow-origin is null')
+      } else {
+        throw new Error(`Expected disallowed origin to have no CORS header, got "${disallowHeader}"`)
+      }
+
+      // 1b-4. Preflight OPTIONS for POST /api/auth/register from allowed origin returns 204
+      const preflightRes = await request('/api/auth/register', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'http://localhost:5173',
+          'Access-Control-Request-Method': 'POST',
+          'Access-Control-Request-Headers': 'Content-Type,Authorization',
+        },
+      })
+      const preflightOrigin = preflightRes.headers?.get('access-control-allow-origin')
+      if (preflightRes.status === 204 && preflightOrigin === 'http://localhost:5173') {
+        logPass('CORS preflight OPTIONS POST /api/auth/register → 204', `status=204, origin=${preflightOrigin}`)
+      } else {
+        throw new Error(`Expected 204 with matching origin, got status=${preflightRes.status}, origin="${preflightOrigin}"`)
+      }
+    } catch (err) {
+      logFail('CORS verification tests', err)
+    }
+
+    // 1c. Fee config startup validation tests (fail-fast message naming the variable)
+    try {
+      const originalFee = process.env.NOTARIZATION_FEE_ETH
+      const originalRecipient = process.env.FEE_RECIPIENT_ADDRESS
+
+      // Test 1: enabled with missing/invalid recipient
+      process.env.NOTARIZATION_FEE_ETH = '0.001'
+      delete process.env.FEE_RECIPIENT_ADDRESS
+      let missingRecipientError = ''
+      try {
+        const { getFeeConfig } = await import('../src/config/fee')
+        getFeeConfig()
+      } catch (err: any) {
+        missingRecipientError = err.message
+      }
+      if (
+        missingRecipientError.startsWith('Backend failed to start: FEE_RECIPIENT_ADDRESS')
+      ) {
+        logPass('Fee config startup validation: missing FEE_RECIPIENT_ADDRESS', missingRecipientError)
+      } else {
+        throw new Error(`Expected "Backend failed to start: FEE_RECIPIENT_ADDRESS...", got "${missingRecipientError}"`)
+      }
+
+      // Test 2: invalid NOTARIZATION_FEE_ETH
+      process.env.NOTARIZATION_FEE_ETH = 'not_a_number'
+      process.env.FEE_RECIPIENT_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'
+      let invalidFeeError = ''
+      try {
+        const { getFeeConfig } = await import('../src/config/fee')
+        getFeeConfig()
+      } catch (err: any) {
+        invalidFeeError = err.message
+      }
+      if (
+        invalidFeeError.startsWith('Backend failed to start: NOTARIZATION_FEE_ETH')
+      ) {
+        logPass('Fee config startup validation: invalid NOTARIZATION_FEE_ETH', invalidFeeError)
+      } else {
+        throw new Error(`Expected "Backend failed to start: NOTARIZATION_FEE_ETH...", got "${invalidFeeError}"`)
+      }
+
+      // Restore environment
+      if (originalFee !== undefined) process.env.NOTARIZATION_FEE_ETH = originalFee
+      else delete process.env.NOTARIZATION_FEE_ETH
+      if (originalRecipient !== undefined) process.env.FEE_RECIPIENT_ADDRESS = originalRecipient
+      else delete process.env.FEE_RECIPIENT_ADDRESS
+    } catch (err) {
+      logFail('Fee startup validation tests', err)
     }
 
     // 2. 404 handler
