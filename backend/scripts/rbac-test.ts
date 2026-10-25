@@ -33,6 +33,10 @@ import { User } from '../src/models/User'
 import { DocumentModel } from '../src/models/Document'
 import { Notarization } from '../src/models/Notarization'
 import { BlockchainService } from '../src/services/blockchain.service'
+import {
+  setGoogleIdTokenVerifier,
+  resetGoogleIdTokenVerifier,
+} from '../src/services/googleAuth.service'
 
 env.AUTH_RATE_LIMIT_MAX = 1000
 env.VERIFY_RATE_LIMIT_PER_MIN = 1000
@@ -136,7 +140,7 @@ async function uploadPdf(
   return { status: res.status, data }
 }
 
-const FORBIDDEN_KEYS = ['passwordHash', 'walletNonce', 'walletNonceExpiry']
+const FORBIDDEN_KEYS = ['passwordHash', 'walletNonce', 'walletNonceExpiry', 'googleId', 'credential']
 function checkForSensitiveFields(obj: any, context: string, visited = new Set()): void {
   if (!obj || typeof obj !== 'object' || visited.has(obj)) return
   visited.add(obj)
@@ -381,8 +385,19 @@ async function runRbacTests() {
     token: notaryToken,
   })
 
+  // Configure mock verifier for RBAC matrix calls
+  setGoogleIdTokenVerifier(async (credential: string) => {
+    const rand = crypto.randomBytes(4).toString('hex')
+    return {
+      sub: credential.startsWith('matrix-link-') ? `sub-${credential}` : `sub-${Date.now()}-${rand}`,
+      email: `user_${Date.now()}_${rand}@gmail.com`,
+      emailVerified: true,
+      name: 'RBAC User',
+    }
+  })
+
   console.log('\n--------------------------------------------------------------------------------')
-  console.log('                    RBAC Matrix Test (31 API Endpoints)')
+  console.log('                    RBAC Matrix Test (34 API Endpoints)')
   console.log('--------------------------------------------------------------------------------')
 
   type EndpointSpec = {
@@ -460,6 +475,42 @@ async function runRbacTests() {
     },
     {
       id: 7,
+      method: 'GET',
+      route: '/api/auth/config',
+      expected: [200, 200, 200, 200],
+      call: async (token) => (await request('/api/auth/config', { token })).status,
+    },
+    {
+      id: 8,
+      method: 'POST',
+      route: '/api/auth/google',
+      expected: [201, 201, 201, 201],
+      call: async () => {
+        return (
+          await request('/api/auth/google', {
+            method: 'POST',
+            body: { credential: `matrix-google-${Date.now()}-${crypto.randomBytes(4).toString('hex')}` },
+          })
+        ).status
+      },
+    },
+    {
+      id: 9,
+      method: 'POST',
+      route: '/api/auth/google/link',
+      expected: [401, 200, 200, 200],
+      call: async (token, role) => {
+        return (
+          await request('/api/auth/google/link', {
+            method: 'POST',
+            token,
+            body: { credential: `matrix-link-${role.toLowerCase()}` },
+          })
+        ).status
+      },
+    },
+    {
+      id: 10,
       method: 'POST',
       route: '/api/documents/upload',
       expected: [401, 201, 201, 201],
@@ -469,35 +520,35 @@ async function runRbacTests() {
       },
     },
     {
-      id: 8,
+      id: 11,
       method: 'GET',
       route: '/api/documents/stats',
       expected: [401, 200, 200, 200],
       call: async (token) => (await request('/api/documents/stats', { token })).status,
     },
     {
-      id: 9,
+      id: 12,
       method: 'GET',
       route: '/api/documents',
       expected: [401, 200, 200, 200],
       call: async (token) => (await request('/api/documents', { token })).status,
     },
     {
-      id: 10,
+      id: 13,
       method: 'GET',
       route: '/api/documents/:id',
       expected: [401, 200, 200, 200], // user1 is owner -> 200, notary -> 200, admin -> 200
       call: async (token) => (await request(`/api/documents/${doc1Id}`, { token })).status,
     },
     {
-      id: 11,
+      id: 14,
       method: 'GET',
       route: '/api/documents/:id/file',
       expected: [401, 200, 200, 200], // user1 is owner -> 200, notary -> 200, admin -> 200
       call: async (token) => (await request(`/api/documents/${doc1Id}/file`, { token })).status,
     },
     {
-      id: 12,
+      id: 15,
       method: 'POST',
       route: '/api/notarization/request',
       expected: [401, 201, 404, 404], // doc2 owned by user1 -> anon: 401, user1 (owner): 201, notary/admin (not owner): 404
@@ -521,35 +572,35 @@ async function runRbacTests() {
       },
     },
     {
-      id: 13,
+      id: 16,
       method: 'GET',
       route: '/api/notarization/pending',
       expected: [401, 403, 200, 200],
       call: async (token) => (await request('/api/notarization/pending', { token })).status,
     },
     {
-      id: 14,
+      id: 17,
       method: 'GET',
       route: '/api/notarization',
       expected: [401, 200, 200, 200],
       call: async (token) => (await request('/api/notarization', { token })).status,
     },
     {
-      id: 15,
+      id: 18,
       method: 'GET',
       route: '/api/notarization/:id',
       expected: [401, 200, 200, 200], // user1 is owner -> 200, notary -> 200, admin -> 200
       call: async (token) => (await request(`/api/notarization/${notarization1Id}`, { token })).status,
     },
     {
-      id: 16,
+      id: 19,
       method: 'POST',
       route: '/api/notarization/:id/approve',
       expected: [401, 403, 200, 403],
       call: async (token) => (await request(`/api/notarization/${notarization1Id}/approve`, { method: 'POST', token })).status,
     },
     {
-      id: 17,
+      id: 20,
       method: 'POST',
       route: '/api/notarization/:id/reject',
       expected: [401, 403, 200, 403],
@@ -563,7 +614,7 @@ async function runRbacTests() {
         ).status,
     },
     {
-      id: 18,
+      id: 21,
       method: 'POST',
       route: '/api/notarization/:id/confirm',
       expected: [401, 403, 422, 403], // NOTARY reaches confirmation logic (returns 422 for dummy hash), anon 401, USER 403, ADMIN 403
@@ -577,7 +628,7 @@ async function runRbacTests() {
         ).status,
     },
     {
-      id: 19,
+      id: 22,
       method: 'POST',
       route: '/api/notarization/:id/payment',
       expected: [401, 409, 404, 404], // anon 401, USER1 (owner) 409 (FEE_NOT_ENABLED), NOTARY/ADMIN (strangers) 404
@@ -591,21 +642,21 @@ async function runRbacTests() {
         ).status,
     },
     {
-      id: 20,
+      id: 23,
       method: 'GET',
       route: '/api/blockchain/contract',
       expected: [401, 403, 403, 200],
       call: async (token) => (await request('/api/blockchain/contract', { token })).status,
     },
     {
-      id: 21,
+      id: 24,
       method: 'GET',
       route: '/api/blockchain/:documentId',
       expected: [401, 200, 200, 200], // user1 is owner -> 200, notary -> 200, admin -> 200
       call: async (token) => (await request(`/api/blockchain/${doc1Id}`, { token })).status,
     },
     {
-      id: 22,
+      id: 25,
       method: 'POST',
       route: '/api/verify',
       expected: [200, 200, 200, 200],
@@ -615,7 +666,7 @@ async function runRbacTests() {
       },
     },
     {
-      id: 23,
+      id: 26,
       method: 'GET',
       route: '/api/verify/hash/:sha256',
       expected: [200, 200, 200, 200],
@@ -628,7 +679,7 @@ async function runRbacTests() {
         ).status,
     },
     {
-      id: 24,
+      id: 27,
       method: 'GET',
       route: '/api/verify/key/:key',
       expected: [200, 200, 200, 200],
@@ -641,21 +692,21 @@ async function runRbacTests() {
         ).status,
     },
     {
-      id: 25,
+      id: 28,
       method: 'GET',
       route: '/api/config/fees',
       expected: [200, 200, 200, 200],
       call: async (token) => (await request('/api/config/fees', { token })).status,
     },
     {
-      id: 26,
+      id: 29,
       method: 'GET',
       route: '/api/admin/users',
       expected: [401, 403, 403, 200],
       call: async (token) => (await request('/api/admin/users', { token })).status,
     },
     {
-      id: 27,
+      id: 30,
       method: 'PATCH',
       route: '/api/admin/users/:id/role',
       expected: [401, 403, 403, 200],
@@ -669,7 +720,7 @@ async function runRbacTests() {
         ).status,
     },
     {
-      id: 28,
+      id: 31,
       method: 'PATCH',
       route: '/api/admin/users/:id/status',
       expected: [401, 403, 403, 200],
@@ -683,21 +734,21 @@ async function runRbacTests() {
         ).status,
     },
     {
-      id: 29,
+      id: 32,
       method: 'GET',
       route: '/api/admin/notaries',
       expected: [401, 403, 403, 200],
       call: async (token) => (await request('/api/admin/notaries', { token })).status,
     },
     {
-      id: 30,
+      id: 33,
       method: 'GET',
       route: '/api/admin/activity',
       expected: [401, 403, 403, 200],
       call: async (token) => (await request('/api/admin/activity', { token })).status,
     },
     {
-      id: 31,
+      id: 34,
       method: 'GET',
       route: '/api/admin/stats',
       expected: [401, 403, 403, 200],
@@ -782,6 +833,8 @@ async function runRbacTests() {
   console.log('  \x1b[32m✔ PASS\x1b[0m [Sensitive Data Check] 0 responses exposed passwordHash, walletNonce, or raw nonces')
 
   // ─── Teardown ────────────────────────────────────────────────────────────────
+  resetGoogleIdTokenVerifier()
+
   if (server) {
     await new Promise<void>((resolve) => server?.close(() => resolve()))
     console.log('\n🛑 Isolated test server stopped.')

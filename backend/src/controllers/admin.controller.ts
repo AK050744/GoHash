@@ -38,6 +38,8 @@ function safeUser(u: any) {
     role: u.role,
     walletAddress: u.walletAddress ?? null,
     isActive: u.isActive,
+    authProviders: u.authProviders || ['PASSWORD'],
+    googleLinked: Boolean(u.googleId || (u.authProviders && u.authProviders.includes('GOOGLE'))),
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
   }
@@ -52,7 +54,7 @@ function safeUser(u: any) {
  *   ?q=<string>              (case-insensitive name/email search)
  *   ?limit=<number>          (default 50, max 100)
  *
- * NEVER returns passwordHash.
+ * NEVER returns passwordHash or googleId.
  */
 export const listUsers = asyncHandler(async (req: Request, res: Response) => {
   const roleFilter = typeof req.query.role === 'string' ? req.query.role : undefined
@@ -72,7 +74,7 @@ export const listUsers = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const users = await User.find(filter)
-    .select('-passwordHash -walletNonce -walletNonceExpiry')
+    .select('+googleId -passwordHash -walletNonce -walletNonceExpiry')
     .sort({ createdAt: -1 })
     .limit(limit)
     .lean()
@@ -106,7 +108,7 @@ export const changeUserRole = asyncHandler(async (req: Request, res: Response) =
   const user = await User.findByIdAndUpdate(
     id,
     { role: role as UserRole },
-    { new: true, select: '-passwordHash -walletNonce -walletNonceExpiry' }
+    { new: true, select: '+googleId -passwordHash -walletNonce -walletNonceExpiry' }
   ).lean()
 
   if (!user) {
@@ -143,7 +145,7 @@ export const changeUserStatus = asyncHandler(async (req: Request, res: Response)
   const user = await User.findByIdAndUpdate(
     id,
     { isActive },
-    { new: true, select: '-passwordHash -walletNonce -walletNonceExpiry' }
+    { new: true, select: '+googleId -passwordHash -walletNonce -walletNonceExpiry' }
   ).lean()
 
   if (!user) {
@@ -180,7 +182,7 @@ export const updateUserWallet = asyncHandler(async (req: Request, res: Response)
   const user = await User.findByIdAndUpdate(
     id,
     { walletAddress: normalized },
-    { new: true, select: '-passwordHash -walletNonce -walletNonceExpiry' }
+    { new: true, select: '+googleId -passwordHash -walletNonce -walletNonceExpiry' }
   ).lean()
 
   if (!user) {
@@ -205,7 +207,7 @@ export const updateUserWallet = asyncHandler(async (req: Request, res: Response)
  */
 export const listNotaries = asyncHandler(async (_req: Request, res: Response) => {
   const notaryUsers = await User.find({ role: 'NOTARY' })
-    .select('-passwordHash -walletNonce -walletNonceExpiry')
+    .select('+googleId -passwordHash -walletNonce -walletNonceExpiry')
     .sort({ createdAt: -1 })
     .lean()
 

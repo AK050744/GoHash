@@ -3,15 +3,31 @@ import { ZodError } from 'zod'
 import { ApiError } from '../utils/ApiError'
 import { env } from '../config/env'
 
+function redactSensitiveLog(val: any): any {
+  if (val === null || val === undefined) return val
+  if (typeof val === 'string') {
+    return val.replace(/(["']?credential["']?\s*[:=]\s*["'])([^"']+)(["'])/gi, '$1[REDACTED]$3')
+  }
+  if (typeof val === 'object') {
+    if (val instanceof Error) {
+      val.message = redactSensitiveLog(val.message)
+      if (val.stack) val.stack = redactSensitiveLog(val.stack)
+      return val
+    }
+  }
+  return val
+}
+
 export function errorHandler(
   err: Error | ApiError | ZodError | any,
   _req: Request,
   res: Response,
   _next: NextFunction
 ): void {
-  // Always log unexpected errors in non-test environments
+  // Always log unexpected errors in non-test environments (redacting any credential fields)
   if (env.NODE_ENV !== 'test') {
-    console.error(`[Error] [${err.name || 'Error'}]:`, err.message || err)
+    const safeMsg = redactSensitiveLog(err.message || err)
+    console.error(`[Error] [${err.name || 'Error'}]:`, safeMsg)
   }
 
   // 1. Handled ApiError
@@ -59,12 +75,20 @@ export function errorHandler(
       ? err.issues.map((issue: any) => `${issue.path.join('.')}: ${issue.message}`).join('; ')
       : err.message
 
+    const sanitizedIssues = err.issues?.map((issue: any) => {
+      if (issue.path?.includes('credential')) {
+        const { received, input, ...rest } = issue
+        return rest
+      }
+      return issue
+    })
+
     res.status(400).json({
       success: false,
       error: {
         code: customCode || 'VALIDATION_ERROR',
         message: formattedMessage,
-        details: err.issues,
+        details: sanitizedIssues,
       },
     })
     return
@@ -112,7 +136,7 @@ export function errorHandler(
   }
 
   // 6. Generic unhandled error (500)
-  console.error(err.stack || err)
+  console.error(redactSensitiveLog(err.stack || err))
   res.status(500).json({
     success: false,
     error: {

@@ -22,6 +22,7 @@
 | **Task F4** | Full-stack & Docs (Connection Diagnostics, CORS Robustness & Startup Fail-Fast) | **Complete** | Vite dev port 8080 & 5173 in CORS_ORIGIN; diagnosable fetch error messaging; fail-fast fee config checks |
 | **Sprint 6A** | Backend (RBAC audit, security hardening, Zod validation) | **Complete** | RBAC matrix test (26 endpoints), Helmet, CORS pinned, rate limiting, JWT HS256 pinned, Zod schemas, typecheck 0 errors |
 | **Sprint 6B** | Docs (README, architecture, project-flow, VIVA, REQUIREMENTS_COVERAGE) | **Complete** | README.md rewritten; docs/architecture.md, docs/project-flow.md, docs/VIVA.md, docs/REQUIREMENTS_COVERAGE.md created |
+| **Task G1** | `backend/` & Docs (Google sign-in ID-token flow) | **Complete** | `google-auth-library` ID token verification, `/auth/config`, `/auth/google`, `/auth/google/link`, User model sparse index, test:google |
 
 ---
 
@@ -498,5 +499,46 @@ If the Hardhat node was restarted or the contract redeployed, restart the backen
   - `Backend failed to start: NOTARIZATION_FEE_ETH is invalid ("<value>"). Must be a non-negative number.`
   - `Backend failed to start: FEE_RECIPIENT_ADDRESS is invalid or missing ("<value>"). Required when NOTARIZATION_FEE_ETH is enabled.`
   matching the single-line fail-fast pattern of MongoDB connection failure.
+
+---
+
+### Task G1 (Google Sign-In Backend ID-Token Flow)
+
+#### 1. Scope and Architecture
+- **Backend and Docs Only**: Scoped strictly to `backend/` and `docs/`.
+- **Google ID-Token Flow**: The browser exchanges OAuth credentials for a Google ID token ("credential") and sends it to the backend. The backend verifies the token using Google's official `google-auth-library` (`OAuth2Client.verifyIdToken({ idToken, audience: GOOGLE_CLIENT_ID })`).
+- **Secret-Free Implementation**: Never adds, reads, or requires a Google Client Secret. Only the public `GOOGLE_CLIENT_ID` is used.
+- **Unified Session**: On successful verification, the backend issues the identical GoHash HS256 JWT as the standard password login.
+- **Startup Fail-Fast**: If `GOOGLE_CLIENT_ID` is set in the environment, it must end in `.apps.googleusercontent.com`; otherwise, the backend fails fast at startup with one clear line: `❌ [ENV] GOOGLE_CLIENT_ID must end in ".apps.googleusercontent.com"`.
+- **Credential Privacy**: Never logs, stores, or returns the Google credential, token, or Google ID. Logging middleware explicitly redacts `req.body.credential`, and Zod validation strips raw credentials from error reports.
+
+#### 2. User Model Extensions
+- `googleId`: `String`, `unique: true`, `sparse: true`, `select: false`.
+- `authProviders`: Array of strings (`['PASSWORD']` or `['GOOGLE']` or `['PASSWORD', 'GOOGLE']`), default `['PASSWORD']`.
+- `passwordHash`: Optional (`required: false`).
+- **Defensive Password Login**: Attempting to log into a Google-only account (where `passwordHash` is undefined) via `/api/auth/login` returns the identical generic `401 INVALID_CREDENTIALS` error without crashing.
+
+#### 3. Endpoints Added
+- `GET /api/auth/config` (Public): Returns `{ success: true, googleEnabled: boolean, googleClientId?: string }`.
+- `POST /api/auth/google` (Public, `authLimiter`, Zod-validated):
+  - 503 `GOOGLE_AUTH_DISABLED` if `GOOGLE_CLIENT_ID` is not set.
+  - 401 `GOOGLE_TOKEN_INVALID` for any token verification or audience verification error.
+  - 401 `GOOGLE_EMAIL_NOT_VERIFIED` if `email_verified` is not true.
+  - 403 `GOOGLE_EMAIL_NOT_SUPPORTED` if email is neither `@gmail.com` nor has a valid `hd` (hosted domain) set.
+  - 403 `ACCOUNT_DISABLED` if user account is deactivated.
+  - 409 `ACCOUNT_EXISTS_USE_PASSWORD` if email already exists with password auth and no matching `googleId` (no automatic account linking by email).
+  - 200 `{ success: true, token, user }` if user already exists with matching `googleId`.
+  - 201 `{ success: true, token, user }` for newly registered Google user (assigned role `USER` strictly from DB; handles duplicate-key race condition).
+- `POST /api/auth/google/link` (Authenticated, `requireAuth`, Zod-validated):
+  - Same token verification rules.
+  - 409 `GOOGLE_ALREADY_LINKED` if `googleId` is already associated with another user account.
+  - 409 `ALREADY_LINKED` if the current user already has a different `googleId` linked.
+  - 200 `{ success: true, user }` idempotent if linking the exact same Google account again.
+  - On success, updates `authProviders` to include `GOOGLE`.
+
+#### 4. Safety & RBAC
+- Updated RBAC matrix test suite (`scripts/rbac-test.ts`) across all 34 endpoints.
+- Validated with comprehensive test suite (`scripts/google-auth-test.ts`, `npm run test:google`).
+- `test:all` includes `npm run test:google`.
 
 

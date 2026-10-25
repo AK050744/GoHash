@@ -48,8 +48,11 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 | Method | Endpoint | Auth | Purpose | Status |
 |:---|:---|:---:|:---|:---|
 | `GET` | `/api/health` | Public | System uptime & MongoDB connection status | **IMPLEMENTED** |
+| `GET` | `/api/auth/config` | Public | Public Google OAuth client config & feature toggle | **IMPLEMENTED** |
 | `POST` | `/api/auth/register` | Public | Register a new user account (role USER) | **IMPLEMENTED** |
 | `POST` | `/api/auth/login` | Public | Authenticate user & return signed JWT | **IMPLEMENTED** |
+| `POST` | `/api/auth/google` | Public | Authenticate via Google ID-token (ID-token flow) | **IMPLEMENTED** |
+| `POST` | `/api/auth/google/link` | JWT | Link Google identity to authenticated account | **IMPLEMENTED** |
 | `GET` | `/api/auth/me` | JWT | Fetch authenticated user profile | **IMPLEMENTED** |
 | `POST` | `/api/auth/wallet/nonce` | JWT | Generate one-time signed-message nonce for wallet link | **IMPLEMENTED** |
 | `PATCH` | `/api/auth/wallet` | JWT | Link wallet via signed nonce (backend never holds keys) | **IMPLEMENTED** |
@@ -107,6 +110,27 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 
 ### 2. Authentication & User Profile
 
+#### `GET /api/auth/config`
+- **Auth**: None (Public)
+- **Request**: None
+- **Status**: `IMPLEMENTED`
+- **Purpose**: Exposes whether Google ID-token authentication is enabled and returns the public Google Client ID when configured.
+- **Success (200 - Enabled)**:
+```json
+{
+  "success": true,
+  "googleEnabled": true,
+  "googleClientId": "911792744904-i1c3ichdrhqo63vk82ugf51d8jg7viji.apps.googleusercontent.com"
+}
+```
+- **Success (200 - Disabled)**:
+```json
+{
+  "success": true,
+  "googleEnabled": false
+}
+```
+
 #### `POST /api/auth/register`
 - **Auth**: None
 - **Request Body**:
@@ -130,13 +154,16 @@ All UI copy, API responses, error messages, code comments, and documentation mus
     "email": "alice@example.com",
     "role": "USER",
     "walletAddress": null,
-    "isActive": true
+    "isActive": true,
+    "authProviders": ["PASSWORD"],
+    "googleLinked": false
   }
 }
 ```
 - **Error Responses**:
   - `400 Bad Request` (`VALIDATION_ERROR`): Validation failed (e.g. password mismatch, password < 8 chars).
   - `409 Conflict` (`EMAIL_ALREADY_EXISTS`): An account with this email already exists.
+  - `429 Too Many Requests` (`RATE_LIMITED`): Auth rate limit exceeded.
 
 #### `POST /api/auth/login`
 - **Auth**: None
@@ -158,12 +185,105 @@ All UI copy, API responses, error messages, code comments, and documentation mus
     "email": "alice@example.com",
     "role": "USER",
     "walletAddress": null,
-    "isActive": true
+    "isActive": true,
+    "authProviders": ["PASSWORD"],
+    "googleLinked": false
   }
 }
 ```
 - **Error Responses**:
-  - `401 Unauthorized` (`INVALID_CREDENTIALS`): Generic error returned for non-existent email, wrong password, or deactivated accounts.
+  - `401 Unauthorized` (`INVALID_CREDENTIALS`): Generic error returned for non-existent email, wrong password, Google-only account without passwordHash, or deactivated accounts.
+  - `429 Too Many Requests` (`RATE_LIMITED`): Auth rate limit exceeded.
+
+#### `POST /api/auth/google`
+- **Auth**: None (Public)
+- **Rate Limit**: Shared with `/api/auth/login` and `/api/auth/register` (`AUTH_RATE_LIMIT_MAX` per window).
+- **Request Body**:
+```json
+{
+  "credential": "<Google ID Token>"
+}
+```
+- **Verification & Business Rules**:
+  - If `GOOGLE_CLIENT_ID` is unset -> `503 GOOGLE_AUTH_DISABLED`.
+  - Verified with `google-auth-library` (`verifyIdToken`). Any verification failure -> generic `401 GOOGLE_TOKEN_INVALID` with no internal details leaked.
+  - `email_verified` must be `true` -> else `401 GOOGLE_EMAIL_NOT_VERIFIED`.
+  - Google must be authoritative: email ends with `@gmail.com` (case-insensitive) OR `hostedDomain` is set -> else `403 GOOGLE_EMAIL_NOT_SUPPORTED` (`"Use a Gmail or Google Workspace account."`).
+  - If a user with this `googleId` exists:
+    - If `isActive: false` -> `403 ACCOUNT_DISABLED`.
+    - Otherwise -> `200 OK` with `{ success: true, token, user }` (identical shape & expiry to password login).
+  - If no `googleId` match, but a user with the same email exists:
+    - Returns `409 ACCOUNT_EXISTS_USE_PASSWORD` (`"An account with this email already exists. Sign in with your password, then link Google in your profile."`). **Never auto-links by email**.
+  - Otherwise creates a new user:
+    - `name` from Google (fallback: email local part), lowercase `email`, `googleId` (`select: false`), `authProviders: ["GOOGLE"]`, `role: "USER"`, `isActive: true`.
+    - Returns `201 Created` with `{ success: true, token, user }`. Handles duplicate-key races safely by re-reading the user.
+    - Role is always taken from database; a Google sign-in can never create `NOTARY` or `ADMIN`.
+- **Success (200 / 201)**:
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "67039a8c1719b2241cfb1234",
+    "name": "Alice Doe",
+    "email": "alice@gmail.com",
+    "role": "USER",
+    "walletAddress": null,
+    "isActive": true,
+    "authProviders": ["GOOGLE"],
+    "googleLinked": true
+  }
+}
+```
+- **Error Responses**:
+  - `400 Bad Request` (`VALIDATION_ERROR`): Missing credential.
+  - `401 Unauthorized` (`GOOGLE_TOKEN_INVALID`): Invalid or unverified Google token.
+  - `401 Unauthorized` (`GOOGLE_EMAIL_NOT_VERIFIED`): Google account email has not been verified.
+  - `403 Forbidden` (`GOOGLE_EMAIL_NOT_SUPPORTED`): Email is neither Gmail nor Google Workspace.
+  - `403 Forbidden` (`ACCOUNT_DISABLED`): Account has been disabled by an administrator.
+  - `409 Conflict` (`ACCOUNT_EXISTS_USE_PASSWORD`): Account exists with this email; must login with password first.
+  - `429 Too Many Requests` (`RATE_LIMITED`): Auth rate limit exceeded.
+  - `503 Service Unavailable` (`GOOGLE_AUTH_DISABLED`): Google authentication is not enabled on this server.
+
+#### `POST /api/auth/google/link`
+- **Auth**: Bearer JWT (`Authorization: Bearer <token>`)
+- **Request Body**:
+```json
+{
+  "credential": "<Google ID Token>"
+}
+```
+- **Rules**:
+  - Uses identical Google ID-token verification rules as `/api/auth/google`.
+  - The Google account email may differ from the GoHash account email.
+  - If `googleId` is already used by another user -> `409 GOOGLE_ALREADY_LINKED`.
+  - If current user already has a different `googleId` -> `409 ALREADY_LINKED`.
+  - If current user links the same `googleId` again -> idempotent `200 OK`.
+  - On success, adds `GOOGLE` to `authProviders` and returns the updated user profile.
+- **Success (200)**:
+```json
+{
+  "success": true,
+  "user": {
+    "id": "67039a8c1719b2241cfb1234",
+    "name": "Alice Doe",
+    "email": "alice@example.com",
+    "role": "USER",
+    "walletAddress": null,
+    "isActive": true,
+    "authProviders": ["PASSWORD", "GOOGLE"],
+    "googleLinked": true
+  }
+}
+```
+- **Error Responses**:
+  - `401 Unauthorized` (`UNAUTHORIZED`): Missing or invalid JWT.
+  - `401 Unauthorized` (`GOOGLE_TOKEN_INVALID`): Invalid Google token.
+  - `401 Unauthorized` (`GOOGLE_EMAIL_NOT_VERIFIED`): Google email is not verified.
+  - `403 Forbidden` (`GOOGLE_EMAIL_NOT_SUPPORTED`): Email is not Gmail or Google Workspace.
+  - `409 Conflict` (`GOOGLE_ALREADY_LINKED`): This Google account is already linked to another GoHash account.
+  - `409 Conflict` (`ALREADY_LINKED`): A different Google account is already linked to this profile.
+  - `503 Service Unavailable` (`GOOGLE_AUTH_DISABLED`): Google authentication is disabled.
 
 #### `GET /api/auth/me`
 - **Auth**: Bearer JWT (`Authorization: Bearer <token>`)
@@ -179,6 +299,8 @@ All UI copy, API responses, error messages, code comments, and documentation mus
     "role": "USER",
     "walletAddress": null,
     "isActive": true,
+    "authProviders": ["PASSWORD"],
+    "googleLinked": false,
     "createdAt": "2026-10-07T10:00:00.000Z",
     "updatedAt": "2026-10-07T10:00:00.000Z"
   }
@@ -186,6 +308,7 @@ All UI copy, API responses, error messages, code comments, and documentation mus
 ```
 - **Error Responses**:
   - `401 Unauthorized` (`UNAUTHORIZED`): Missing or invalid token.
+  - `403 Forbidden` (`ACCOUNT_DISABLED`): Account has been disabled.
 
 #### `POST /api/auth/wallet/nonce`
 - **Auth**: Bearer JWT
@@ -227,7 +350,9 @@ All UI copy, API responses, error messages, code comments, and documentation mus
     "email": "alice@example.com",
     "role": "USER",
     "walletAddress": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
-    "isActive": true
+    "isActive": true,
+    "authProviders": ["PASSWORD"],
+    "googleLinked": false
   }
 }
 ```
@@ -1005,6 +1130,8 @@ All endpoints under `/api/admin` require valid JWT authentication with the `ADMI
       "role": "USER",
       "walletAddress": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
       "isActive": true,
+      "authProviders": ["PASSWORD"],
+      "googleLinked": false,
       "createdAt": "2026-10-07T10:15:30.000Z",
       "updatedAt": "2026-10-07T10:15:30.000Z"
     }
@@ -1040,6 +1167,8 @@ All endpoints under `/api/admin` require valid JWT authentication with the `ADMI
     "role": "NOTARY",
     "walletAddress": null,
     "isActive": true,
+    "authProviders": ["PASSWORD"],
+    "googleLinked": false,
     "createdAt": "2026-10-07T10:15:30.000Z",
     "updatedAt": "2026-10-07T11:00:00.000Z"
   }
@@ -1077,6 +1206,8 @@ All endpoints under `/api/admin` require valid JWT authentication with the `ADMI
     "role": "NOTARY",
     "walletAddress": null,
     "isActive": false,
+    "authProviders": ["PASSWORD"],
+    "googleLinked": false,
     "createdAt": "2026-10-07T10:15:30.000Z",
     "updatedAt": "2026-10-07T11:05:00.000Z"
   }

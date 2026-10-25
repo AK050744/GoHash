@@ -30,7 +30,7 @@ export const updateWalletSchema = z.object({
 })
 
 export const googleAuthSchema = z.object({
-  credential: z.string({ required_error: 'Credential is required' }).min(1, 'Credential is required'),
+  credential: z.string().min(1, 'Credential is required'),
 })
 
 export type RegisterInput = z.infer<typeof registerSchema>
