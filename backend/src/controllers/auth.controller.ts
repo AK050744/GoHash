@@ -3,6 +3,7 @@ import { AuthService } from '../services/auth.service'
 import { sendSuccess } from '../utils/response'
 import { asyncHandler } from '../utils/asyncHandler'
 import { ApiError } from '../utils/ApiError'
+import { env } from '../config/env'
 
 /**
  * POST /api/auth/register
