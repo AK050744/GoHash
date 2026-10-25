@@ -1,17 +1,20 @@
 import { Schema, model, Document, Types } from 'mongoose'
 
 export type UserRole = 'USER' | 'NOTARY' | 'ADMIN'
+export type AuthProvider = 'PASSWORD' | 'GOOGLE'
 
 export interface IUser extends Document {
   _id: Types.ObjectId
   name: string
   email: string
-  passwordHash: string
+  passwordHash?: string
   role: UserRole
   walletAddress?: string | null
   walletNonce?: string | null
   walletNonceExpiry?: Date | null
   isActive: boolean
+  googleId?: string | null
+  authProviders: AuthProvider[]
   createdAt: Date
   updatedAt: Date
 }
@@ -34,8 +37,19 @@ const UserSchema = new Schema<IUser>(
     },
     passwordHash: {
       type: String,
-      required: [true, 'Password hash is required'],
+      required: false,
       select: false, // Never returned in queries by default
+    },
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      select: false,
+    },
+    authProviders: {
+      type: [String],
+      enum: ['PASSWORD', 'GOOGLE'],
+      default: ['PASSWORD'],
     },
     role: {
       type: String,

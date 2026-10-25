@@ -29,6 +29,11 @@ export const updateWalletSchema = z.object({
   signature: z.string().trim().min(1, 'Signature is required for wallet linking'),
 })
 
+export const googleAuthSchema = z.object({
+  credential: z.string({ required_error: 'Credential is required' }).min(1, 'Credential is required'),
+})
+
 export type RegisterInput = z.infer<typeof registerSchema>
 export type LoginInput = z.infer<typeof loginSchema>
 export type UpdateWalletInput = z.infer<typeof updateWalletSchema>
+export type GoogleAuthInput = z.infer<typeof googleAuthSchema>

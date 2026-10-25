@@ -6,6 +6,7 @@ import { User, IUser } from '../models/User'
 import { env } from '../config/env'
 import { ApiError } from '../utils/ApiError'
 import { RegisterInput, LoginInput } from '../validations/auth.validation'
+import { GooglePayload, verifyGoogleIdToken } from './googleAuth.service'
 
 const BCRYPT_SALT_ROUNDS = 12
 const NONCE_VALID_MINUTES = 5
@@ -19,7 +20,15 @@ export interface AuthSuccessPayload {
     role: string
     walletAddress?: string | null
     isActive: boolean
+    authProviders: string[]
+    googleLinked: boolean
   }
+}
+
+export interface GoogleAuthResult {
+  token: string
+  user: Record<string, unknown>
+  isNew: boolean
 }
 
 export interface NoncePayload {
@@ -49,6 +58,7 @@ export class AuthService {
       email: email.toLowerCase(),
       passwordHash,
       role: 'USER',
+      authProviders: ['PASSWORD'],
       isActive: true,
     })
 
@@ -63,19 +73,21 @@ export class AuthService {
         role: user.role,
         walletAddress: user.walletAddress,
         isActive: user.isActive,
+        authProviders: user.authProviders || ['PASSWORD'],
+        googleLinked: false,
       },
     }
   }
 
   /**
    * Login user with email and password.
-   * Throws identical generic error on wrong email, wrong password, or inactive account.
+   * Throws identical generic error on wrong email, wrong password, missing passwordHash, or inactive account.
    */
   static async login(data: LoginInput): Promise<AuthSuccessPayload> {
     const { email, password } = data
 
-    // Include passwordHash in query
-    const user = await User.findOne({ email: email.toLowerCase() }).select('+passwordHash')
+    // Include passwordHash and googleId in query
+    const user = await User.findOne({ email: email.toLowerCase() }).select('+passwordHash +googleId')
 
     // Constant-time check or generic failure
     if (!user) {
@@ -84,6 +96,11 @@ export class AuthService {
 
     // Check active status
     if (!user.isActive) {
+      throw ApiError.unauthorized('Invalid email or password', 'INVALID_CREDENTIALS')
+    }
+
+    // If account has no passwordHash (e.g. Google-only account), return generic 401 without crashing
+    if (!user.passwordHash) {
       throw ApiError.unauthorized('Invalid email or password', 'INVALID_CREDENTIALS')
     }
 
@@ -103,6 +120,8 @@ export class AuthService {
         role: user.role,
         walletAddress: user.walletAddress,
         isActive: user.isActive,
+        authProviders: user.authProviders || ['PASSWORD'],
+        googleLinked: Boolean(user.googleId || user.authProviders?.includes('GOOGLE')),
       },
     }
   }
@@ -111,7 +130,7 @@ export class AuthService {
    * Fetch current authenticated user by ID.
    */
   static async getMe(userId: string): Promise<Record<string, unknown>> {
-    const user = await User.findById(userId)
+    const user = await User.findById(userId).select('+googleId')
     if (!user) {
       throw ApiError.notFound('User profile not found', 'USER_NOT_FOUND')
     }
@@ -123,6 +142,8 @@ export class AuthService {
       role: user.role,
       walletAddress: user.walletAddress,
       isActive: user.isActive,
+      authProviders: user.authProviders || ['PASSWORD'],
+      googleLinked: Boolean(user.googleId || user.authProviders?.includes('GOOGLE')),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     }
@@ -242,14 +263,7 @@ export class AuthService {
       throw ApiError.notFound('User not found', 'USER_NOT_FOUND')
     }
 
-    return {
-      id: updated._id.toString(),
-      name: updated.name,
-      email: updated.email,
-      role: updated.role,
-      walletAddress: updated.walletAddress,
-      isActive: updated.isActive,
-    }
+    return this.serializeUser(updated)
   }
 
   /**
@@ -267,14 +281,7 @@ export class AuthService {
       throw ApiError.notFound('User not found', 'USER_NOT_FOUND')
     }
 
-    return {
-      id: user._id.toString(),
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      walletAddress: user.walletAddress,
-      isActive: user.isActive,
-    }
+    return this.serializeUser(user)
   }
 
   /**
@@ -293,6 +300,7 @@ export class AuthService {
 
   /**
    * Helper: serialize a User document to API shape (no sensitive fields).
+   * Invariant: Never includes googleId, Google email, or passwordHash.
    */
   static serializeUser(user: IUser): Record<string, unknown> {
     return {
@@ -300,8 +308,176 @@ export class AuthService {
       name: user.name,
       email: user.email,
       role: user.role,
-      walletAddress: user.walletAddress,
+      walletAddress: user.walletAddress ?? null,
       isActive: user.isActive,
+      authProviders: user.authProviders || ['PASSWORD'],
+      googleLinked: Boolean(user.googleId || (user.authProviders && user.authProviders.includes('GOOGLE'))),
     }
   }
+
+  /**
+   * Google ID-token sign-in.
+   * Public endpoint POST /api/auth/google
+   */
+  static async googleLogin(credential: string): Promise<GoogleAuthResult> {
+    if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_ID.trim()) {
+      throw new ApiError(503, 'GOOGLE_AUTH_DISABLED', 'Google authentication is currently disabled.')
+    }
+
+    let payload: GooglePayload
+    try {
+      payload = await verifyGoogleIdToken(credential)
+    } catch {
+      throw new ApiError(401, 'GOOGLE_TOKEN_INVALID', 'Invalid Google token.')
+    }
+
+    if (!payload.emailVerified) {
+      throw new ApiError(401, 'GOOGLE_EMAIL_NOT_VERIFIED', 'Google email is not verified.')
+    }
+
+    const isGmail = payload.email.toLowerCase().endsWith('@gmail.com')
+    const isWorkspace = Boolean(payload.hostedDomain && payload.hostedDomain.trim().length > 0)
+    if (!isGmail && !isWorkspace) {
+      throw new ApiError(403, 'GOOGLE_EMAIL_NOT_SUPPORTED', 'Use a Gmail or Google Workspace account.')
+    }
+
+    const existingByGoogleId = await User.findOne({ googleId: payload.sub }).select('+googleId')
+    if (existingByGoogleId) {
+      if (!existingByGoogleId.isActive) {
+        throw new ApiError(403, 'ACCOUNT_DISABLED', 'This account has been disabled. Please contact an administrator.')
+      }
+
+      const token = this.generateToken(existingByGoogleId._id.toString(), existingByGoogleId.role)
+      return {
+        token,
+        user: this.serializeUser(existingByGoogleId),
+        isNew: false,
+      }
+    }
+
+    const existingByEmail = await User.findOne({ email: payload.email.toLowerCase() })
+    if (existingByEmail) {
+      throw new ApiError(
+        409,
+        'ACCOUNT_EXISTS_USE_PASSWORD',
+        'An account with this email already exists. Sign in with your password, then link Google in your profile.'
+      )
+    }
+
+    const fallbackName = payload.name?.trim() || payload.email.split('@')[0]
+    let newUser: IUser
+    try {
+      newUser = await User.create({
+        name: fallbackName,
+        email: payload.email.toLowerCase(),
+        googleId: payload.sub,
+        authProviders: ['GOOGLE'],
+        role: 'USER',
+        isActive: true,
+      })
+    } catch (err: any) {
+      if (err.code === 11000) {
+        const raceUser = await User.findOne({ googleId: payload.sub }).select('+googleId')
+        if (raceUser) {
+          if (!raceUser.isActive) {
+            throw new ApiError(403, 'ACCOUNT_DISABLED', 'This account has been disabled. Please contact an administrator.')
+          }
+          const token = this.generateToken(raceUser._id.toString(), raceUser.role)
+          return {
+            token,
+            user: this.serializeUser(raceUser),
+            isNew: false,
+          }
+        }
+        const raceEmailUser = await User.findOne({ email: payload.email.toLowerCase() })
+        if (raceEmailUser) {
+          throw new ApiError(
+            409,
+            'ACCOUNT_EXISTS_USE_PASSWORD',
+            'An account with this email already exists. Sign in with your password, then link Google in your profile.'
+          )
+        }
+      }
+      throw err
+    }
+
+    const token = this.generateToken(newUser._id.toString(), newUser.role)
+    return {
+      token,
+      user: this.serializeUser(newUser),
+      isNew: true,
+    }
+  }
+
+  /**
+   * Link Google account to currently authenticated user.
+   * Protected endpoint POST /api/auth/google/link
+   */
+  static async linkGoogle(userId: string, credential: string): Promise<Record<string, unknown>> {
+    if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_ID.trim()) {
+      throw new ApiError(503, 'GOOGLE_AUTH_DISABLED', 'Google authentication is currently disabled.')
+    }
+
+    let payload: GooglePayload
+    try {
+      payload = await verifyGoogleIdToken(credential)
+    } catch {
+      throw new ApiError(401, 'GOOGLE_TOKEN_INVALID', 'Invalid Google token.')
+    }
+
+    if (!payload.emailVerified) {
+      throw new ApiError(401, 'GOOGLE_EMAIL_NOT_VERIFIED', 'Google email is not verified.')
+    }
+
+    const isGmail = payload.email.toLowerCase().endsWith('@gmail.com')
+    const isWorkspace = Boolean(payload.hostedDomain && payload.hostedDomain.trim().length > 0)
+    if (!isGmail && !isWorkspace) {
+      throw new ApiError(403, 'GOOGLE_EMAIL_NOT_SUPPORTED', 'Use a Gmail or Google Workspace account.')
+    }
+
+    const currentUser = await User.findById(userId).select('+googleId')
+    if (!currentUser) {
+      throw ApiError.notFound('User not found', 'USER_NOT_FOUND')
+    }
+    if (!currentUser.isActive) {
+      throw new ApiError(403, 'ACCOUNT_DISABLED', 'This account has been disabled. Please contact an administrator.')
+    }
+
+    // googleId already used by another user -> 409 GOOGLE_ALREADY_LINKED
+    const otherUser = await User.findOne({
+      googleId: payload.sub,
+      _id: { $ne: currentUser._id },
+    })
+    if (otherUser) {
+      throw new ApiError(
+        409,
+        'GOOGLE_ALREADY_LINKED',
+        'This Google account is already linked to another GoHash account.'
+      )
+    }
+
+    // this user already has a different googleId -> 409 ALREADY_LINKED
+    // the same googleId again is an idempotent 200
+    if (currentUser.googleId) {
+      if (currentUser.googleId === payload.sub) {
+        if (!currentUser.authProviders.includes('GOOGLE')) {
+          currentUser.authProviders.push('GOOGLE')
+          await currentUser.save()
+        }
+        return this.serializeUser(currentUser)
+      } else {
+        throw new ApiError(409, 'ALREADY_LINKED', 'A different Google account is already linked to this profile.')
+      }
+    }
+
+    // On success add GOOGLE to authProviders and return the updated user
+    currentUser.googleId = payload.sub
+    if (!currentUser.authProviders.includes('GOOGLE')) {
+      currentUser.authProviders.push('GOOGLE')
+    }
+    await currentUser.save()
+
+    return this.serializeUser(currentUser)
+  }
 }
+

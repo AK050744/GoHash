@@ -7,7 +7,7 @@ This adapter provides optional enhancements for Gemini models in Antigravity.
 
 ---
 
-## Model Selection
+## Model Selection of the notary system  
 
 ### Flash vs Pro
 

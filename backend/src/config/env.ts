@@ -35,11 +35,21 @@ const envSchema = z.object({
 
   // Rate limiting for public verify endpoint (requests per minute per IP)
   VERIFY_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(30),
+
+  // Google Authentication (ID-token flow, optional)
+  GOOGLE_CLIENT_ID: z.string().optional().default(''),
 })
+
+const rawGoogleClientId = process.env.GOOGLE_CLIENT_ID?.trim()
+if (rawGoogleClientId && !rawGoogleClientId.endsWith('.apps.googleusercontent.com')) {
+  console.error('❌ [ENV] GOOGLE_CLIENT_ID must end in ".apps.googleusercontent.com"')
+  throw new Error('GOOGLE_CLIENT_ID must end in ".apps.googleusercontent.com"')
+}
 
 const parseResult = envSchema.safeParse({
   ...process.env,
   MONGODB_URI: rawMongoUri,
+  GOOGLE_CLIENT_ID: rawGoogleClientId || '',
 })
 
 if (!parseResult.success) {
