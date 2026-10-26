@@ -23,6 +23,7 @@
 | **Sprint 6A** | Backend (RBAC audit, security hardening, Zod validation) | **Complete** | RBAC matrix test (26 endpoints), Helmet, CORS pinned, rate limiting, JWT HS256 pinned, Zod schemas, typecheck 0 errors |
 | **Sprint 6B** | Docs (README, architecture, project-flow, VIVA, REQUIREMENTS_COVERAGE) | **Complete** | README.md rewritten; docs/architecture.md, docs/project-flow.md, docs/VIVA.md, docs/REQUIREMENTS_COVERAGE.md created |
 | **Task G1** | `backend/` & Docs (Google sign-in ID-token flow) | **Complete** | `google-auth-library` ID token verification, `/auth/config`, `/auth/google`, `/auth/google/link`, User model sparse index, test:google |
+| **Task G2** | `frontend/` & Docs (Continue with Google & Profile linking) | **Complete** | `@react-oauth/google` integration, runtime config discovery, login/register "or" divider, profile sign-in methods card |
 
 ---
 

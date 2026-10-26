@@ -25,6 +25,8 @@ export interface AuthUser {
   role: "USER" | "NOTARY" | "ADMIN";
   walletAddress: string | null;
   isActive: boolean;
+  authProviders?: ("PASSWORD" | "GOOGLE")[];
+  googleLinked?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -46,6 +48,8 @@ interface AuthContextValue {
   loading: boolean;
   login: (payload: LoginPayload) => Promise<AuthUser>;
   register: (payload: RegisterPayload) => Promise<void>;
+  loginWithToken: (token: string, user: AuthUser) => void;
+  updateUser: (user: AuthUser) => void;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }
@@ -106,6 +110,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user);
   }, []);
 
+  const loginWithToken = useCallback((token: string, loggedUser: AuthUser) => {
+    saveToken(token);
+    setUser(loggedUser);
+  }, []);
+
+  const updateUser = useCallback((updatedUser: AuthUser) => {
+    setUser(updatedUser);
+  }, []);
+
   const logout = useCallback(() => {
     clearToken();
     setUser(null);
@@ -116,7 +129,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchMe]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        login,
+        register,
+        loginWithToken,
+        updateUser,
+        logout,
+        refreshUser,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

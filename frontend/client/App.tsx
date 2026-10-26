@@ -9,6 +9,7 @@ import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-route
 import { AppBackground } from "@/components/layout/app-background";
 import { AppLayout, PublicLayout } from "@/components/layout/site-layout";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { GoogleAuthProvider } from "@/context/GoogleAuthContext";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminNotaries from "./pages/AdminNotaries";
 import Certificate from "./pages/Certificate";
@@ -208,8 +209,10 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <AppBackground />
-          <AppRoutes />
+          <GoogleAuthProvider>
+            <AppBackground />
+            <AppRoutes />
+          </GoogleAuthProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
