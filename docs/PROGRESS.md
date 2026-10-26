@@ -542,4 +542,64 @@ If the Hardhat node was restarted or the contract redeployed, restart the backen
 - Validated with comprehensive test suite (`scripts/google-auth-test.ts`, `npm run test:google`).
 - `test:all` includes `npm run test:google`.
 
+---
+
+### Task G2 (Continue with Google on Frontend & Profile Linking)
+
+#### 1. Overview & Dependency Rationale
+- **Dependency**: `@react-oauth/google` is the only added frontend dependency.
+- **Why `@react-oauth/google`**:
+  - Official, standard React wrapper for Google Identity Services (GIS - GSI SDK `https://accounts.google.com/gsi/client`).
+  - Supports modern ID-token flow without third-party cookies or client secrets.
+  - Dynamically mounts `GoogleOAuthProvider` with runtime `clientId` fetched directly from the backend API.
+  - Renders official Google-branded buttons with strict iframe/postMessage sandboxing, ensuring compliance with Google's FedCM (Federated Credential Management) and Cross-Origin Opener Policy (COOP).
+  - Eliminates the security risk of maintaining custom unvetted script injection logic.
+
+#### 2. Google OAuth 2.0 Client Setup & Authorized Origins
+To configure Google authentication in Google Cloud Console:
+1. Navigate to **Google Cloud Console** → **APIs & Services** → **Credentials**.
+2. Create or select an **OAuth 2.0 Client ID** of type **Web application**.
+3. Under **Authorized JavaScript origins**, configure the exact origin URLs:
+   - `http://localhost:5173` (Vite preview / alternate dev port)
+   - `http://localhost:8080` (GoHash Vite dev server port)
+   - `http://127.0.0.1:5173`
+   - `http://127.0.0.1:8080`
+4. Copy the public Client ID (e.g., `911792744904-i1c3ichdrhqo63vk82ugf51d8jg7viji.apps.googleusercontent.com`) into backend `.env` as `GOOGLE_CLIENT_ID`.
+5. *Never configure or supply a client secret to the frontend or backend.*
+
+#### 3. Frontend Architecture & Flow
+- **Runtime Discovery**: On application startup, `GoogleAuthProvider` calls `GET /api/auth/config`.
+  - If `googleEnabled` is `false`, zero Google UI is mounted anywhere.
+  - If `googleEnabled` is `true`, `GoogleOAuthProvider` wraps the app with the retrieved `clientId`.
+  - No `VITE_` variable is read and no Client ID is hardcoded in the frontend bundle.
+- **Login & Register Pages**:
+  - Below password form, displays an `"or"` divider and the official `GoogleLogin` button with text `"Continue with Google"`.
+  - Explicitly configured with `useOneTap={false}` and `auto_select={false}`.
+  - On credential receipt, passes `credential` to `POST /api/auth/google`.
+  - Shares session management with password login (`loginWithToken(token, user)`), saving the HS256 JWT in `localStorage` (`gohash_token`).
+  - Redirects by role: `USER` → `/dashboard`, `NOTARY` → `/notary/dashboard`, `ADMIN` → `/admin/dashboard`.
+  - Buttons and inputs are disabled while the asynchronous authentication request runs.
+- **Profile Page (Sign-in Methods Card)**:
+  - Preserves Builder.io dark-themed typography and card layout.
+  - **Password**: Displayed with "Configured" badge when `user.authProviders` includes `PASSWORD`.
+  - **Google**: Only displayed when `googleEnabled` is true. Shows a "Linked" badge if `user.googleLinked` is true; otherwise renders a "Continue with Google" button calling `POST /api/auth/google/link`.
+  - Updates profile state immediately in `AuthContext` via `updateUser(user)`.
+- **Credential Privacy**:
+  - The Google credential/token is never decoded (no `jwt-decode` or `atob`), never logged to console, and never saved in `localStorage`/`sessionStorage`. It is strictly relayed to the backend API.
+
+#### 4. Google Error Handling & Mapping Matrix
+| Error Scenario / Backend Code | HTTP Status | User Message | Handling File |
+| :--- | :---: | :--- | :--- |
+| `GOOGLE_TOKEN_INVALID` | 401 | *"Invalid Google token. Please try signing in again."* | [google-auth-errors.ts](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/lib/google-auth-errors.ts) |
+| `GOOGLE_EMAIL_NOT_VERIFIED` | 401 | *"Your Google email is not verified. Please verify your email with Google first."* | [google-auth-errors.ts](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/lib/google-auth-errors.ts) |
+| `GOOGLE_EMAIL_NOT_SUPPORTED` | 403 | *"Use a Gmail or Google Workspace account."* | [google-auth-errors.ts](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/lib/google-auth-errors.ts) |
+| `ACCOUNT_EXISTS_USE_PASSWORD` | 409 | *"An account with this email already exists. Sign in with your password, then link Google in your profile."* (With link to password form) | [Login.tsx](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/pages/Login.tsx), [Register.tsx](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/pages/Register.tsx) |
+| `ACCOUNT_DISABLED` | 403 | *"This account has been disabled. Please contact an administrator."* | [google-auth-errors.ts](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/lib/google-auth-errors.ts) |
+| `GOOGLE_AUTH_DISABLED` | 503 | *"Google authentication is currently disabled on this server."* | [google-auth-errors.ts](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/lib/google-auth-errors.ts) |
+| Rate Limit (`RATE_LIMITED`) | 429 | *"Too many authentication attempts. Please wait a moment and try again."* | [google-auth-errors.ts](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/lib/google-auth-errors.ts) |
+| Network Failure | N/A | *"Cannot reach the GoHash server. Check that the backend is running."* | [api.ts](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/lib/api.ts), [google-auth-errors.ts](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/lib/google-auth-errors.ts) |
+| Script Load Failure | N/A | *"Google sign-in is unavailable. Check that this site's address is listed in the Google client's authorized origins."* | [GoogleAuthContext.tsx](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/context/GoogleAuthContext.tsx), [Login.tsx](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/pages/Login.tsx), [Register.tsx](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/pages/Register.tsx), [Profile.tsx](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/pages/Profile.tsx) |
+| `GOOGLE_ALREADY_LINKED` | 409 | *"This Google account is already linked to another GoHash account."* | [Profile.tsx](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/pages/Profile.tsx) |
+| `ALREADY_LINKED` | 409 | *"A different Google account is already linked to this profile."* | [Profile.tsx](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/pages/Profile.tsx) |
+
 
