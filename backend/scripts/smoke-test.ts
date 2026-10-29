@@ -55,7 +55,7 @@ async function request(
     headers?: Record<string, string>
     body?: Record<string, unknown>
   } = {}
-): Promise<{ status: number; data: any }> {
+): Promise<{ status: number; data: any; headers: Headers }> {
   const method = options.method || 'GET'
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -144,9 +144,9 @@ async function runSmokeTests() {
     (l: any) => l.name === 'notFoundHandler' || l.handle?.name === 'notFoundHandler'
   )
   if (notFoundIdx !== -1) {
-    ;(app as any)._router.stack.splice(notFoundIdx, 0, rbacLayer)
+    ; (app as any)._router.stack.splice(notFoundIdx, 0, rbacLayer)
   } else {
-    ;(app as any)._router.stack.push(rbacLayer)
+    ; (app as any)._router.stack.push(rbacLayer)
   }
 
   // Spin up isolated test server on random free port (listen(0))
@@ -505,7 +505,7 @@ async function runSmokeTests() {
 
     // 11b. Wrong signer: sign message with a different throwaway wallet → 400 SIGNATURE_INVALID
     try {
-      const wrongWallet  = ethers.Wallet.createRandom()
+      const wrongWallet = ethers.Wallet.createRandom()
       const nonceRes2 = await request('/api/auth/wallet/nonce', {
         method: 'POST',
         headers: { Authorization: `Bearer ${authToken}` },
@@ -557,7 +557,7 @@ async function runSmokeTests() {
     // 11d. Wallet in use: another user tries to link an address already linked to User A → 409 WALLET_IN_USE
     try {
       // First: User A links a fresh wallet so we have a known-in-use address.
-      const freshWallet  = ethers.Wallet.createRandom()
+      const freshWallet = ethers.Wallet.createRandom()
       const freshAddress = freshWallet.address
       const freshNonce = await request('/api/auth/wallet/nonce', {
         method: 'POST',
@@ -582,7 +582,7 @@ async function runSmokeTests() {
         },
       })
       const userCToken = userCReg.data?.token
-      const userCId    = userCReg.data?.user?.id
+      const userCId = userCReg.data?.user?.id
 
       // User C tries to link freshAddress (already linked to User A)
       const userCNonce = await request('/api/auth/wallet/nonce', {
