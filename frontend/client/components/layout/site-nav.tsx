@@ -53,6 +53,7 @@ interface AccountActionsProps {
 
 function AccountActions({ role, onNavigate }: AccountActionsProps) {
   const { user, logout } = useAuth();
+  const effectiveRole = role ?? (user?.role as AppRole | undefined);
 
   const handleLogout = () => {
     logout();
@@ -60,14 +61,14 @@ function AccountActions({ role, onNavigate }: AccountActionsProps) {
     window.location.href = "/login";
   };
 
-  if (role) {
+  if (effectiveRole) {
     return (
       <>
         <WalletPill
           status={user?.walletAddress ? "connected" : "disconnected"}
           address={user?.walletAddress ?? undefined}
         />
-        <Badge variant="teal">{role}</Badge>
+        <Badge variant="teal">{effectiveRole}</Badge>
         <Button variant="outline" size="sm" icon={<LogOut />} onClick={handleLogout}>
           Logout
         </Button>
@@ -95,8 +96,10 @@ export interface SiteNavProps {
 }
 
 function SiteNav({ role }: SiteNavProps) {
+  const { user } = useAuth();
+  const effectiveRole = role ?? (user?.role as AppRole | undefined);
   const [menuOpen, setMenuOpen] = useState(false);
-  const items = role ? roleNavItems[role] : publicNavItems;
+  const items = effectiveRole ? roleNavItems[effectiveRole] : publicNavItems;
   const closeMenu = () => setMenuOpen(false);
 
   return (
@@ -128,7 +131,7 @@ function SiteNav({ role }: SiteNavProps) {
         </nav>
 
         <div className="hidden items-center gap-2 xl:flex">
-          <AccountActions role={role} />
+          <AccountActions role={effectiveRole} />
         </div>
 
         <DialogPrimitive.Root open={menuOpen} onOpenChange={setMenuOpen}>
@@ -180,7 +183,7 @@ function SiteNav({ role }: SiteNavProps) {
               </nav>
 
               <div className="flex flex-col gap-3 border-t-[2.5px] border-navy pt-5">
-                <AccountActions role={role} onNavigate={closeMenu} />
+                <AccountActions role={effectiveRole} onNavigate={closeMenu} />
               </div>
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>
