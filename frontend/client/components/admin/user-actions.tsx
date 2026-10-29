@@ -245,12 +245,34 @@ function ChainActionModal({ user, action, open, onOpenChange, onSaved }: ChainAc
             method: "wallet_switchEthereumChain",
             params: [{ chainId: expectedHexChainId }],
           });
-        } catch {
-          setStepStatuses(["failed", "pending", "pending", "pending"]);
-          setErrorTitle("Cannot start");
-          setError("Cannot start: Please switch MetaMask to the expected network.");
-          setRunning(false);
-          return;
+        } catch (switchErr: any) {
+          if (switchErr?.code === 4902 || switchErr?.message?.includes("Unrecognized chain ID")) {
+            try {
+              await ethereum.request({
+                method: "wallet_addEthereumChain",
+                params: [
+                  {
+                    chainId: expectedHexChainId,
+                    chainName: "Hardhat Local",
+                    rpcUrls: [import.meta.env.VITE_RPC_URL || "http://127.0.0.1:8545"],
+                    nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
+                  },
+                ],
+              });
+            } catch {
+              setStepStatuses(["failed", "pending", "pending", "pending"]);
+              setErrorTitle("Cannot start");
+              setError("Cannot start: Please add and switch MetaMask to the expected network.");
+              setRunning(false);
+              return;
+            }
+          } else {
+            setStepStatuses(["failed", "pending", "pending", "pending"]);
+            setErrorTitle("Cannot start");
+            setError("Cannot start: Please switch MetaMask to the expected network.");
+            setRunning(false);
+            return;
+          }
         }
       }
     } catch {

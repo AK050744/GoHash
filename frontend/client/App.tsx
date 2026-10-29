@@ -10,6 +10,7 @@ import { AppBackground } from "@/components/layout/app-background";
 import { AppLayout, PublicLayout } from "@/components/layout/site-layout";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { GoogleAuthProvider } from "@/context/GoogleAuthContext";
+import { MetaMaskProvider } from "@/context/MetaMaskContext";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminNotaries from "./pages/AdminNotaries";
 import Certificate from "./pages/Certificate";
@@ -210,8 +211,10 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <GoogleAuthProvider>
-            <AppBackground />
-            <AppRoutes />
+            <MetaMaskProvider>
+              <AppBackground />
+              <AppRoutes />
+            </MetaMaskProvider>
           </GoogleAuthProvider>
         </AuthProvider>
       </BrowserRouter>

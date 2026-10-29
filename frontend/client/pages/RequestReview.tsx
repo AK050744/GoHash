@@ -196,8 +196,26 @@ export default function RequestReview() {
             method: "wallet_switchEthereumChain",
             params: [{ chainId: expectedHexChainId }],
           });
-        } catch (switchErr) {
-          console.warn("Could not auto-switch network:", switchErr);
+        } catch (switchErr: any) {
+          if (switchErr?.code === 4902 || switchErr?.message?.includes("Unrecognized chain ID")) {
+            try {
+              await ethereum.request({
+                method: "wallet_addEthereumChain",
+                params: [
+                  {
+                    chainId: expectedHexChainId,
+                    chainName: "Hardhat Local",
+                    rpcUrls: [import.meta.env.VITE_RPC_URL || "http://127.0.0.1:8545"],
+                    nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
+                  },
+                ],
+              });
+            } catch (addErr) {
+              console.warn("Could not add network to MetaMask:", addErr);
+            }
+          } else {
+            console.warn("Could not auto-switch network:", switchErr);
+          }
         }
       }
 

@@ -1,10 +1,12 @@
 import { Link } from "react-router-dom";
-import { Wallet } from "lucide-react";
+import { Layers, Wallet } from "lucide-react";
 
+import { MetaMaskIcon } from "@/components/icons/metamask-icon";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useMetaMask } from "@/context/MetaMaskContext";
 
 export interface WalletStatusCardProps {
   linked: boolean;
@@ -29,6 +31,7 @@ function WalletStatusCard({
   linkError = null,
   linkSuccess = false,
 }: WalletStatusCardProps) {
+  const { isInstalled, isConnected, isCorrectNetwork, expectedChainName, switchNetwork } = useMetaMask();
   return (
     <Card className="flex flex-col gap-6 p-6 md:p-8">
       <div className="flex flex-wrap items-center gap-4">
@@ -61,18 +64,32 @@ function WalletStatusCard({
           </dd>
         </div>
         <div className="flex flex-col gap-1">
-          <dt className="text-xs font-bold tracking-[0.12em] text-slate uppercase">
-            Connected MetaMask Account
+          <dt className="flex items-center gap-1.5 text-xs font-bold tracking-[0.12em] text-slate uppercase">
+            <MetaMaskIcon size={14} />
+            <span>MetaMask Account</span>
           </dt>
           <dd className="font-mono text-sm font-bold break-all">
-            {connectedAddress ?? "Not connected"}
+            {connectedAddress ?? (isInstalled ? "Not connected in MetaMask" : "Extension not installed")}
           </dd>
         </div>
         <div className="flex flex-col gap-1 sm:col-span-2">
           <dt className="text-xs font-bold tracking-[0.12em] text-slate uppercase">
             Network
           </dt>
-          <dd className="font-bold">{network ?? "Hardhat Local"}</dd>
+          <dd className="flex items-center justify-between gap-2 font-bold">
+            <span>{network ?? expectedChainName}</span>
+            {isConnected && !isCorrectNetwork && (
+              <Button
+                variant="yellow"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => void switchNetwork()}
+              >
+                <Layers className="size-3 mr-1" />
+                Switch to {expectedChainName}
+              </Button>
+            )}
+          </dd>
         </div>
       </dl>
 

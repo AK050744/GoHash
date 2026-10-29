@@ -211,8 +211,25 @@ export function FeePaymentCard({
         params: [{ chainId: targetChainIdHex }],
       });
       setCurrentChainId(targetChainIdHex);
-    } catch {
-      // Network switch error
+    } catch (switchError: any) {
+      if (switchError?.code === 4902 || switchError?.message?.includes("Unrecognized chain ID")) {
+        try {
+          await ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: targetChainIdHex,
+                chainName: expectedChainName || "Hardhat Local",
+                rpcUrls: [import.meta.env.VITE_RPC_URL || "http://127.0.0.1:8545"],
+                nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
+              },
+            ],
+          });
+          setCurrentChainId(targetChainIdHex);
+        } catch {
+          // ignore
+        }
+      }
     }
   };
 
