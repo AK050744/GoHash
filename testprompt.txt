@@ -1,0 +1,19 @@
+powershell
+docker start gohash-mongo
+docker ps
+powershell
+# Terminal A (leave running)
+Set-Location "C:\Users\anshv\OneDrive\Desktop\GoHash\blockchain"
+npx hardhat node
+powershell
+# Terminal B (runs once)
+Set-Location "C:\Users\anshv\OneDrive\Desktop\GoHash\blockchain"
+npx hardhat run scripts/deploy-local.ts --network localhost
+powershell
+# Terminal C (leave running)
+Set-Location "C:\Users\anshv\OneDrive\Desktop\GoHash\backend"
+npm run dev
+powershell
+# Terminal D (leave running)
+Set-Location "C:\Users\anshv\OneDrive\Desktop\GoHash\frontend"
+npm run dev

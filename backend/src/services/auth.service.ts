@@ -355,13 +355,33 @@ export class AuthService {
       }
     }
 
-    const existingByEmail = await User.findOne({ email: payload.email.toLowerCase() })
+    const existingByEmail = await User.findOne({ email: payload.email.toLowerCase() }).select('+googleId')
     if (existingByEmail) {
-      throw new ApiError(
-        409,
-        'ACCOUNT_EXISTS_USE_PASSWORD',
-        'An account with this email already exists. Sign in with your password, then link Google in your profile.'
-      )
+      if (!existingByEmail.isActive) {
+        throw new ApiError(403, 'ACCOUNT_DISABLED', 'This account has been disabled. Please contact an administrator.')
+      }
+
+      // Auto-link Google if not already linked since Google has verified their email
+      if (!existingByEmail.googleId) {
+        existingByEmail.googleId = payload.sub
+        if (!existingByEmail.authProviders.includes('GOOGLE')) {
+          existingByEmail.authProviders.push('GOOGLE')
+        }
+        await existingByEmail.save()
+      } else if (existingByEmail.googleId !== payload.sub) {
+        throw new ApiError(
+          409,
+          'GOOGLE_ALREADY_LINKED',
+          'This email is already associated with a different Google account.'
+        )
+      }
+
+      const token = this.generateToken(existingByEmail._id.toString(), existingByEmail.role)
+      return {
+        token,
+        user: this.serializeUser(existingByEmail),
+        isNew: false,
+      }
     }
 
     const fallbackName = payload.name?.trim() || payload.email.split('@')[0]
@@ -389,13 +409,24 @@ export class AuthService {
             isNew: false,
           }
         }
-        const raceEmailUser = await User.findOne({ email: payload.email.toLowerCase() })
+        const raceEmailUser = await User.findOne({ email: payload.email.toLowerCase() }).select('+googleId')
         if (raceEmailUser) {
-          throw new ApiError(
-            409,
-            'ACCOUNT_EXISTS_USE_PASSWORD',
-            'An account with this email already exists. Sign in with your password, then link Google in your profile.'
-          )
+          if (!raceEmailUser.isActive) {
+            throw new ApiError(403, 'ACCOUNT_DISABLED', 'This account has been disabled. Please contact an administrator.')
+          }
+          if (!raceEmailUser.googleId) {
+            raceEmailUser.googleId = payload.sub
+            if (!raceEmailUser.authProviders.includes('GOOGLE')) {
+              raceEmailUser.authProviders.push('GOOGLE')
+            }
+            await raceEmailUser.save()
+          }
+          const token = this.generateToken(raceEmailUser._id.toString(), raceEmailUser.role)
+          return {
+            token,
+            user: this.serializeUser(raceEmailUser),
+            isNew: false,
+          }
         }
       }
       throw err

@@ -16,6 +16,7 @@
     "blockchain:deploy:local:full":"cd blockchain && npx hardhat run scripts/deploy-local.ts --network localhost",
     "blockchain:deploy:sepolia":   "cd blockchain && npx hardhat run scripts/deploy.ts --network sepolia",
     "backend:dev":                 "cd backend && npm run dev",
-    "frontend:dev":                "cd frontend && npm run dev"
+    "frontend:dev":                "cd frontend && npm run dev",
+    "dev":                         "cd frontend && npm run dev"
   }
 }
