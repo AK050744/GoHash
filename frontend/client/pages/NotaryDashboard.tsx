@@ -5,6 +5,7 @@ import { PageContainer } from "@/components/layout/page-container";
 import { PendingRequestsTable } from "@/components/notary/pending-requests-table";
 import type { PendingRequest } from "@/components/notary/types";
 import { ListBody, type ListState } from "@/components/ui/list-body";
+import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { WalletStatusCard } from "@/components/wallet/wallet-status-card";
 import { api } from "@/lib/api";
@@ -70,9 +71,9 @@ export default function NotaryDashboard() {
       setFeeConfig(fees);
       const items: PendingRequest[] = res.notarizations.map((n) => ({
         id: n.id,
-        documentName: n.document.originalName,
-        hash: n.documentHash,
-        ownerName: n.owner.name,
+        documentName: n.document?.originalName || "Document #" + n.id.slice(-6),
+        hash: n.document?.sha256Hash || n.documentHash,
+        ownerName: n.owner?.name || "GoHash User",
         requestedAt: new Date(n.createdAt).toLocaleDateString(),
         payment: n.payment ?? null,
       }));
@@ -95,6 +96,16 @@ export default function NotaryDashboard() {
         icon={<ClipboardCheck />}
         title="Requests"
         subtitle="Review documents waiting for notarization."
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={load}
+            loading={requestsState.status === "loading"}
+          >
+            Refresh List
+          </Button>
+        }
       />
 
       <WalletStatusCard

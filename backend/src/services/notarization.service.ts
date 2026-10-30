@@ -154,7 +154,7 @@ export class NotarizationService {
    * Owner includes { name } (strictly no email).
    */
   static async getPendingNotarizations() {
-    const notarizations = await Notarization.find({ status: 'REQUESTED' })
+    const notarizations = await Notarization.find({ status: { $in: ['REQUESTED', 'APPROVED'] } })
       .populate('documentId')
       .populate('requestedBy', 'name')
       .sort({ createdAt: -1 })

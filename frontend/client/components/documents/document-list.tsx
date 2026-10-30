@@ -57,13 +57,22 @@ function DocumentList({ documents }: DocumentListProps) {
                   {item.createdAt}
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button asChild variant="outline" size="sm">
-                    <Link to={`/documents/${item.id}`}>
-                      <Eye aria-hidden="true" />
-                      View
-                      <span className="sr-only">{item.name}</span>
-                    </Link>
-                  </Button>
+                  <div className="flex items-center justify-end gap-2">
+                    {item.status === "PENDING" && (
+                      <Button asChild variant="primary" size="sm">
+                        <Link to={`/documents/${item.id}`}>
+                          Request Notary
+                        </Link>
+                      </Button>
+                    )}
+                    <Button asChild variant="outline" size="sm">
+                      <Link to={`/documents/${item.id}`}>
+                        <Eye aria-hidden="true" />
+                        View
+                        <span className="sr-only">{item.name}</span>
+                      </Link>
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -87,13 +96,22 @@ function DocumentList({ documents }: DocumentListProps) {
               </div>
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-medium text-slate">{item.createdAt}</p>
-                <Button asChild variant="outline" size="sm">
-                  <Link to={`/documents/${item.id}`}>
-                    <Eye aria-hidden="true" />
-                    View
-                    <span className="sr-only">{item.name}</span>
-                  </Link>
-                </Button>
+                <div className="flex items-center gap-2">
+                  {item.status === "PENDING" && (
+                    <Button asChild variant="primary" size="sm">
+                      <Link to={`/documents/${item.id}`}>
+                        Request Notary
+                      </Link>
+                    </Button>
+                  )}
+                  <Button asChild variant="outline" size="sm">
+                    <Link to={`/documents/${item.id}`}>
+                      <Eye aria-hidden="true" />
+                      View
+                      <span className="sr-only">{item.name}</span>
+                    </Link>
+                  </Button>
+                </div>
               </div>
             </Card>
           </li>

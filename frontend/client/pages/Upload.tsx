@@ -1,6 +1,14 @@
 import { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { CircleCheck, FileText, Upload as UploadIcon, X } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  CheckCircle,
+  CircleCheck,
+  FileText,
+  Send,
+  Sparkles,
+  Upload as UploadIcon,
+  X,
+} from "lucide-react";
 
 import { PageContainer } from "@/components/layout/page-container";
 import { DropZone } from "@/components/documents/drop-zone";
@@ -28,6 +36,11 @@ function formatFileSize(size: number) {
 
 export default function Upload() {
   const [status, setStatus] = useState<UploadStatus>({ kind: "idle" });
+  const [autoRequestNotary, setAutoRequestNotary] = useState(true);
+  const [notaryRequested, setNotaryRequested] = useState(false);
+  const [requestingNotary, setRequestingNotary] = useState(false);
+  const [notaryError, setNotaryError] = useState<string | null>(null);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -36,6 +49,8 @@ export default function Upload() {
   const selectFile = (file: File | undefined) => {
     if (file) {
       setStatus({ kind: "selected", file });
+      setNotaryRequested(false);
+      setNotaryError(null);
     }
   };
 
@@ -44,6 +59,8 @@ export default function Upload() {
       inputRef.current.value = "";
     }
     setStatus({ kind: "idle" });
+    setNotaryRequested(false);
+    setNotaryError(null);
   };
 
   const handleUpload = async () => {
@@ -51,6 +68,7 @@ export default function Upload() {
     const file = status.file;
 
     setStatus({ kind: "uploading", progress: 30 });
+    setNotaryError(null);
 
     try {
       const form = new FormData();
@@ -62,6 +80,28 @@ export default function Upload() {
         success: true;
         document: { id: string; sha256Hash: string };
       }>("/documents/upload", form);
+
+      let requested = false;
+      let reqError: string | null = null;
+
+      // Automatically request notarization if enabled
+      if (autoRequestNotary) {
+        setStatus({ kind: "uploading", progress: 85 });
+        try {
+          await api.post("/notarization/request", {
+            documentId: res.document.id,
+          });
+          requested = true;
+        } catch (err) {
+          reqError =
+            err instanceof Error
+              ? err.message
+              : "Uploaded document, but could not automatically request notary.";
+        }
+      }
+
+      setNotaryRequested(requested);
+      setNotaryError(reqError);
 
       setStatus({
         kind: "success",
@@ -76,12 +116,27 @@ export default function Upload() {
     }
   };
 
+  const handleManualRequestNotary = async (documentId: string) => {
+    setRequestingNotary(true);
+    setNotaryError(null);
+    try {
+      await api.post("/notarization/request", { documentId });
+      setNotaryRequested(true);
+    } catch (err) {
+      setNotaryError(
+        err instanceof Error ? err.message : "Failed to request notarization"
+      );
+    } finally {
+      setRequestingNotary(false);
+    }
+  };
+
   return (
     <PageContainer className="flex flex-col gap-8 pt-12">
       <PageHeader
         icon={<UploadIcon />}
         title="Upload"
-        subtitle="Add a document to request notarization."
+        subtitle="Add a document to request official notarization."
       />
 
       <DropZone
@@ -110,37 +165,108 @@ export default function Upload() {
               <X />
             </Button>
           </div>
+
+          {/* Ask user to request notary */}
+          <div className="brut-border rounded-2xl bg-amber-50/80 p-4 border-2 border-amber-300 flex items-start gap-3 shadow-hard-sm">
+            <input
+              id="auto-request-notary"
+              type="checkbox"
+              checked={autoRequestNotary}
+              onChange={(e) => setAutoRequestNotary(e.target.checked)}
+              className="size-5 mt-0.5 rounded cursor-pointer accent-navy"
+            />
+            <div className="flex flex-col gap-0.5">
+              <label
+                htmlFor="auto-request-notary"
+                className="font-extrabold text-navy cursor-pointer text-sm flex items-center gap-1.5"
+              >
+                <span>Request Notary Review Automatically</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-navy text-yellow rounded-full px-2 py-0.5">
+                  Recommended
+                </span>
+              </label>
+              <p className="text-xs text-slate-700">
+                Immediately sends your document to the official Notary panel so a licensed notary can verify and record it on the blockchain.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
       {status.kind === "uploading" && (
         <div className="flex flex-col gap-3">
-          <p className="font-bold">Uploading…</p>
+          <p className="font-bold">
+            {autoRequestNotary
+              ? "Uploading document & submitting to notary review queue…"
+              : "Uploading document…"}
+          </p>
           <Progress value={status.progress} aria-label="Upload progress" />
         </div>
       )}
 
       {status.kind === "success" && (
-        <Card className="flex flex-col gap-5 p-6 md:p-8">
+        <Card className="flex flex-col gap-6 p-6 md:p-8">
           <div className="flex items-center gap-3">
             <span
               aria-hidden="true"
               className="brut-border flex size-12 items-center justify-center rounded-input bg-green"
             >
-              <CircleCheck className="size-6" />
+              <CircleCheck className="size-6 text-navy" />
             </span>
-            <h2 className="text-xl font-extrabold">Document uploaded</h2>
+            <div>
+              <h2 className="text-xl font-extrabold">
+                {notaryRequested
+                  ? "Document Uploaded & Sent to Notary!"
+                  : "Document Uploaded"}
+              </h2>
+              <p className="text-xs text-slate font-medium">
+                {notaryRequested
+                  ? "Submitted to the Notary review queue. A notary will verify and record it on-chain."
+                  : "Document saved. To have it notarized on the blockchain, submit a notary request."}
+              </p>
+            </div>
           </div>
-          <p className="font-medium text-slate">
-            Keep this hash to verify the document later.
-          </p>
-          <HashBlock value={status.hash} label="document hash" />
-          <Button
-            variant="teal"
-            onClick={() => navigate(`/documents/${status.documentId}`)}
-          >
-            View document
-          </Button>
+
+          {notaryError && (
+            <Alert variant="warning">
+              <AlertTitle>Notary Request Note</AlertTitle>
+              <AlertDescription className="text-xs">{notaryError}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="space-y-1.5">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate">
+              SHA-256 Hash
+            </span>
+            <HashBlock value={status.hash} label="document hash" />
+          </div>
+
+          <div className="flex flex-wrap gap-3 pt-2">
+            {!notaryRequested ? (
+              <Button
+                variant="primary"
+                icon={<Send className="size-4" />}
+                loading={requestingNotary}
+                onClick={() => handleManualRequestNotary(status.documentId)}
+              >
+                Request Notarization Now
+              </Button>
+            ) : (
+              <Button asChild variant="primary">
+                <Link to="/my-documents">
+                  <CheckCircle className="size-4 mr-1.5 text-green" />
+                  Track in My Documents
+                </Link>
+              </Button>
+            )}
+
+            <Button
+              variant="outline"
+              onClick={() => navigate(`/documents/${status.documentId}`)}
+            >
+              View Document Details
+            </Button>
+          </div>
         </Card>
       )}
 
@@ -151,17 +277,37 @@ export default function Upload() {
         </Alert>
       )}
 
-      <div className="flex flex-wrap gap-3">
-        <Button
-          size="lg"
-          icon={<UploadIcon />}
-          loading={status.kind === "uploading"}
-          disabled={status.kind !== "selected"}
-          onClick={handleUpload}
-        >
-          Upload document
-        </Button>
-      </div>
+      {status.kind !== "success" && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            size="lg"
+            variant="primary"
+            icon={<Send className="size-4" />}
+            loading={status.kind === "uploading" && autoRequestNotary}
+            disabled={status.kind !== "selected" || status.kind === "uploading"}
+            onClick={() => {
+              setAutoRequestNotary(true);
+              void handleUpload();
+            }}
+          >
+            Upload &amp; Request Notarization
+          </Button>
+
+          <Button
+            size="lg"
+            variant="outline"
+            icon={<UploadIcon className="size-4" />}
+            loading={status.kind === "uploading" && !autoRequestNotary}
+            disabled={status.kind !== "selected" || status.kind === "uploading"}
+            onClick={() => {
+              setAutoRequestNotary(false);
+              void handleUpload();
+            }}
+          >
+            Upload Only
+          </Button>
+        </div>
+      )}
     </PageContainer>
   );
 }
