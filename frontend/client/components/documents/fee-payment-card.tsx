@@ -219,7 +219,7 @@ export function FeePaymentCard({
             params: [
               {
                 chainId: targetChainIdHex,
-                chainName: expectedChainName || "Hardhat Local",
+                chainName: import.meta.env.VITE_EXPECTED_CHAIN_NAME || "Hardhat Local",
                 rpcUrls: [import.meta.env.VITE_RPC_URL || "http://127.0.0.1:8545"],
                 nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
               },

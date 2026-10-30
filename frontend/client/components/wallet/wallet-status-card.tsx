@@ -80,7 +80,7 @@ function WalletStatusCard({
             <span>{network ?? expectedChainName}</span>
             {isConnected && !isCorrectNetwork && (
               <Button
-                variant="yellow"
+                variant="primary"
                 size="sm"
                 className="h-8 text-xs"
                 onClick={() => void switchNetwork()}

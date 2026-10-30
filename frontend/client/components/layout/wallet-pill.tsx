@@ -270,7 +270,7 @@ export function WalletPill({ className }: WalletPillProps) {
                     Blockchain Network
                   </span>
                   <Badge
-                    variant={isCorrectNetwork ? "teal" : "warning"}
+                    variant={isCorrectNetwork ? "teal" : "danger"}
                     className="text-[10px]"
                   >
                     {isCorrectNetwork ? "Correct Network" : "Wrong Network"}
@@ -285,7 +285,7 @@ export function WalletPill({ className }: WalletPillProps) {
                 {!isCorrectNetwork && (
                   <div className="pt-2">
                     <Button
-                      variant="yellow"
+                      variant="primary"
                       size="sm"
                       className="w-full justify-center text-xs"
                       onClick={handleSwitchNetwork}
