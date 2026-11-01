@@ -193,6 +193,8 @@ Copy-Item .env.example .env
 ```
 
 The frontend `.env.example` values are correct as-is for local development.
+The contract address is loaded from the backend deployment artifact; do not add a
+hardcoded contract address to the frontend environment.
 
 ### Step 3 — Start MongoDB
 
@@ -226,7 +228,7 @@ Passwords are taken from `backend/.env` (`SEED_ADMIN_PASSWORD`, `SEED_NOTARY_PAS
 
 ## Running the Application
 
-You need **five terminals** running simultaneously.
+You need **four terminals** running simultaneously.
 
 | Terminal | Directory    | Command                                                                       | Result |
 |:---------|:-------------|:------------------------------------------------------------------------------|:-------|
@@ -280,7 +282,7 @@ Get-Content blockchain\deployments\localhost.json | ConvertFrom-Json | Select-Ob
 ## Demo Script (13 Steps)
 
 ### Preparation
-1. All five terminals running; MetaMask accounts #0, #1, #2 imported.
+1. All four terminals running; MetaMask accounts #0, #1, #2 imported.
 
 ### User workflow
 2. Open `http://localhost:5173/register` and register as **Alice** (any email/password).

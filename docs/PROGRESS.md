@@ -48,7 +48,7 @@
 - **Prohibited Terminology & Claims**:
   - Never write `"immutable"`, `"unhackable"`, `"cannot be altered"`, `"court-admissible"` / `"admissible"`, or `"impossible collision"`.
   - Never make any **legal-validity claim** (e.g. "replaces legal notaries", "legally binding attestation").
-- **Mandatory Acceptance Searches (`frontend/src`)**:
+- **Mandatory Acceptance Searches (`frontend/client`)**:
   - The codebase must be audited against these patterns, and every hit reported (target: **0 hits**):
     1. `"immutable"`
     2. `"unhackable"`
@@ -253,9 +253,9 @@ cd ../frontend
 npm run lint
 npm run build
 
-# UI Wording & Forbidden Terms Audit (Must return 0 hits in frontend/src)
+# UI Wording & Forbidden Terms Audit (run from the repository root; must return 0 hits in frontend/client)
 # Checks: "immutable", "unhackable", "admissible", "encrypt"
-git grep -i -E "immutable|unhackable|admissible|encrypt" -- src
+git grep -i -E "immutable|unhackable|admissible|encrypt" -- frontend/client
 ```
 
 ---
@@ -601,5 +601,4 @@ To configure Google authentication in Google Cloud Console:
 | Script Load Failure | N/A | *"Google sign-in is unavailable. Check that this site's address is listed in the Google client's authorized origins."* | [GoogleAuthContext.tsx](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/context/GoogleAuthContext.tsx), [Login.tsx](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/pages/Login.tsx), [Register.tsx](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/pages/Register.tsx), [Profile.tsx](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/pages/Profile.tsx) |
 | `GOOGLE_ALREADY_LINKED` | 409 | *"This Google account is already linked to another GoHash account."* | [Profile.tsx](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/pages/Profile.tsx) |
 | `ALREADY_LINKED` | 409 | *"A different Google account is already linked to this profile."* | [Profile.tsx](file:///c:/Users/anshv/OneDrive/Desktop/GoHash/frontend/client/pages/Profile.tsx) |
-
 
