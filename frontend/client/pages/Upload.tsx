@@ -284,7 +284,7 @@ export default function Upload() {
             variant="primary"
             icon={<Send className="size-4" />}
             loading={status.kind === "uploading" && autoRequestNotary}
-            disabled={status.kind !== "selected" || status.kind === "uploading"}
+            disabled={status.kind !== "selected"}
             onClick={() => {
               setAutoRequestNotary(true);
               void handleUpload();
@@ -298,7 +298,7 @@ export default function Upload() {
             variant="outline"
             icon={<UploadIcon className="size-4" />}
             loading={status.kind === "uploading" && !autoRequestNotary}
-            disabled={status.kind !== "selected" || status.kind === "uploading"}
+            disabled={status.kind !== "selected"}
             onClick={() => {
               setAutoRequestNotary(false);
               void handleUpload();
