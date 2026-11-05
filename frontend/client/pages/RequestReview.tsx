@@ -9,6 +9,7 @@ import type {
   PendingRequest,
   RequestReceipt,
 } from "@/components/notary/types";
+import type { StepStatus } from "@/components/ui/stepper";
 import { HashBlock } from "@/components/documents/hash-block";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -66,6 +67,7 @@ export default function RequestReview() {
   const [rejectError, setRejectError] = useState<string | null>(null);
 
   const [approvalState, setApprovalState] = useState<ApprovalState>("idle");
+  const [failedStep, setFailedStep] = useState<number | null>(null);
   const [receipt, setReceipt] = useState<RequestReceipt | null>(null);
   const [approvalError, setApprovalError] = useState<string | null>(null);
 
@@ -168,7 +170,10 @@ export default function RequestReview() {
 
   const handleApprove = async () => {
     setApprovalState("preparing");
+    setFailedStep(null);
     setApprovalError(null);
+    let currentStep = 0;
+
     try {
       // Step 1: Call approve endpoint to get contract call data
       const approveRes = await api.post<{
@@ -180,6 +185,7 @@ export default function RequestReview() {
         args: string[];
       }>(`/notarization/${id}/approve`);
 
+      currentStep = 1;
       setApprovalState("awaiting-wallet");
 
       // Step 2: Invoke MetaMask transaction
@@ -232,22 +238,9 @@ export default function RequestReview() {
         );
       }
 
-      // Encode the function call using ethers-compatible encoding
       const [documentHash, ipfsCid, ownerAddress] = approveRes.args;
-
       const { ethers } = await import("ethers");
 
-      // Validate args before sending to avoid silent on-chain reverts
-      if (!documentHash || documentHash === "0x" + "0".repeat(64)) {
-        throw new Error("Invalid document hash: cannot be zero bytes32.");
-      }
-      if (!ownerAddress || ownerAddress === ethers.ZeroAddress) {
-        throw new Error(
-          "Document owner has no wallet linked. The owner must link a MetaMask wallet before this document can be notarized."
-        );
-      }
-
-      // Normalize to checksummed address (Solidity address type requires valid address)
       let checksummedOwner: string;
       try {
         checksummedOwner = ethers.getAddress(ownerAddress);
@@ -255,93 +248,43 @@ export default function RequestReview() {
         throw new Error(`Invalid owner wallet address: ${ownerAddress}`);
       }
 
-      const fullAbi =
-        Array.isArray(approveRes.abi) &&
-        approveRes.abi.some((item) => typeof item === "string" && item.includes("notarize("))
-          ? approveRes.abi
-          : [
-              ...(approveRes.abi || []),
-              "function notarize(bytes32 documentHash, string calldata ipfsCid, address owner) external",
-            ];
-      const iface = new ethers.Interface(fullAbi);
-      const data = iface.encodeFunctionData(approveRes.method || "notarize", [
+      const fullAbi = [
+        ...(Array.isArray(approveRes.abi) ? approveRes.abi : []),
+        "function notarize(bytes32 documentHash, string calldata ipfsCid, address owner) external",
+        "error NotContractOwner(address caller)",
+        "error NotAuthorizedNotary(address caller)",
+        "error DocumentAlreadyNotarized(bytes32 documentHash)",
+        "error DocumentNotFound(bytes32 documentHash)",
+        "error InvalidHash()",
+        "error InvalidAddress()",
+        "error NotaryAlreadyAuthorized(address notary)",
+        "error NotaryNotFound(address notary)",
+      ];
+
+      const provider = new ethers.BrowserProvider(ethereum);
+      const signer = await provider.getSigner();
+
+      // Check current on-chain pending nonce to prevent MetaMask nonce desync with local node
+      const txOptions: Record<string, any> = {};
+      try {
+        const nonce = await provider.getTransactionCount(activeAccount, "pending");
+        txOptions.nonce = nonce;
+      } catch (nonceErr) {
+        console.warn("Could not fetch on-chain nonce:", nonceErr);
+      }
+
+      const contract = new ethers.Contract(approveRes.contractAddress, fullAbi, signer);
+
+      const tx = await contract.notarize(
         documentHash,
         ipfsCid ?? "",
         checksummedOwner,
-      ]);
+        txOptions
+      );
 
-      // Pre-flight simulation via eth_call to catch contract reverts before spending gas
-      try {
-        await ethereum.request({
-          method: "eth_call",
-          params: [
-            {
-              from: activeAccount,
-              to: approveRes.contractAddress,
-              data,
-            },
-            "latest",
-          ],
-        });
-      } catch (simErr: unknown) {
-        const simMsg =
-          simErr instanceof Error ? simErr.message : String(simErr);
-        if (simMsg.includes("NotAuthorizedNotary") || simMsg.includes("0x")) {
-          throw new Error(
-            "Smart contract rejected the transaction: your wallet is not authorized as a notary on-chain. Re-deploy the contract and ensure this wallet address is added via addNotary()."
-          );
-        }
-        if (simMsg.includes("DocumentAlreadyNotarized")) {
-          throw new Error(
-            "This document hash has already been notarized on-chain."
-          );
-        }
-        if (simMsg.includes("InvalidHash")) {
-          throw new Error("Invalid document hash passed to the contract.");
-        }
-        if (simMsg.includes("InvalidAddress")) {
-          throw new Error(
-            "Invalid owner address. The document owner must link a valid wallet."
-          );
-        }
-        // For other simulation errors, surface them directly
-        throw new Error(`Transaction would fail: ${simMsg}`);
-      }
-
-      // Estimate gas explicitly so MetaMask uses a safe limit
-      let gasEstimate = "0x30d40"; // 200_000 fallback
-      try {
-        const estimatedHex: string = await ethereum.request({
-          method: "eth_estimateGas",
-          params: [
-            {
-              from: activeAccount,
-              to: approveRes.contractAddress,
-              data,
-            },
-          ],
-        });
-        // Add 20% buffer on top of estimate
-        const estimated = BigInt(estimatedHex);
-        const buffered = (estimated * 120n) / 100n;
-        gasEstimate = "0x" + buffered.toString(16);
-      } catch {
-        // Keep fallback gas limit
-      }
-
-      const txHash: string = await ethereum.request({
-        method: "eth_sendTransaction",
-        params: [
-          {
-            from: activeAccount,
-            to: approveRes.contractAddress,
-            data,
-            gas: gasEstimate,
-          },
-        ],
-      });
-
+      currentStep = 2;
       setApprovalState("pending");
+      const txHash: string = tx.hash;
 
       // Step 3: Poll confirm endpoint
       let confirmed = false;
@@ -363,6 +306,7 @@ export default function RequestReview() {
 
           if (confirmRes.status === "TX_PENDING") continue;
 
+          currentStep = 3;
           setApprovalState("verifying");
           await new Promise((r) => setTimeout(r, 1000));
 
@@ -379,41 +323,75 @@ export default function RequestReview() {
           }
         } catch (pollErr: unknown) {
           const pollMsg = pollErr instanceof Error ? pollErr.message : String(pollErr);
-          // If backend confirmed the tx was reverted, stop polling and show a clear error
           if (pollMsg.includes("TX_REVERTED") || pollMsg.includes("VERIFICATION_FAILED")) {
             setApprovalState("failed");
+            setFailedStep(2);
             setApprovalError(
-              "Transaction was reverted on-chain. The smart contract rejected the notarization — ensure your wallet is authorized as a notary and the document has not already been notarized."
+              "Transaction reverted on-chain. Check that your wallet is authorized as a notary and this document was not already notarized."
             );
             return;
           }
-          // Otherwise keep polling (network hiccup, tx still pending, etc.)
         }
       }
 
       if (!confirmed) {
         setApprovalState("failed");
+        setFailedStep(2);
         setApprovalError(
-          "Transaction timed out. Check that your Hardhat node is running and try again."
+          "Transaction confirmation timed out. Check that your Hardhat node is running and try again."
         );
       }
     } catch (err: unknown) {
-      const errObj = err as { code?: string; status?: number; message?: string };
+      const errAny = err as any;
+      let message = "Approval failed";
+
+      if (errAny?.revert?.name) {
+        if (errAny.revert.name === "NotAuthorizedNotary") {
+          message = "Your wallet is not authorized as a notary on-chain. Please ensure your wallet was added via addNotary().";
+        } else if (errAny.revert.name === "DocumentAlreadyNotarized") {
+          message = "This document hash has already been notarized on the blockchain.";
+        } else if (errAny.revert.name === "InvalidAddress") {
+          message = "The document owner wallet address is invalid.";
+        } else {
+          message = `Smart contract reverted: ${errAny.revert.name}`;
+        }
+      } else if (errAny?.reason) {
+        message = errAny.reason;
+      } else if (errAny?.shortMessage) {
+        message = errAny.shortMessage;
+      } else if (errAny?.info?.error?.message) {
+        message = errAny.info.error.message;
+      } else if (err instanceof Error) {
+        message = err.message;
+      }
+
       if (
-        errObj?.code === "PAYMENT_REQUIRED" ||
-        errObj?.status === 402 ||
-        errObj?.message?.includes("PAYMENT_REQUIRED")
+        errAny?.code === "PAYMENT_REQUIRED" ||
+        errAny?.status === 402 ||
+        message.includes("PAYMENT_REQUIRED")
       ) {
         setApprovalState("failed");
+        setFailedStep(0);
         setApprovalError("A notarization fee is required before this request can be approved.");
         return;
       }
-      const message = err instanceof Error ? err.message : "Approval failed";
-      if (message.includes("user rejected") || message.toLowerCase().includes("denied")) {
+
+      if (message.toLowerCase().includes("user rejected") || message.toLowerCase().includes("denied")) {
         setApprovalState("rejected-by-user");
         setApprovalError("Transaction was rejected in MetaMask.");
+      } else if (
+        message.toLowerCase().includes("nonce too high") ||
+        message.toLowerCase().includes("nonce too low") ||
+        message.toLowerCase().includes("replacement transaction underpriced")
+      ) {
+        setApprovalState("failed");
+        setFailedStep(1);
+        setApprovalError(
+          "MetaMask nonce is out of sync with Hardhat. In MetaMask, go to Settings > Advanced > Clear activity tab data (Reset account) and try again."
+        );
       } else {
         setApprovalState("failed");
+        setFailedStep(currentStep);
         setApprovalError(message);
       }
     }
@@ -586,12 +564,24 @@ export default function RequestReview() {
           </Alert>
         )}
 
-        <ApprovalProgress
-          state={approvalState}
-          receipt={receipt}
-          error={approvalError}
-          errorVariant={approvalState === "rejected-by-user" ? "warning" : "error"}
-        />
+        {(() => {
+          const customStepStatuses: StepStatus[] | undefined =
+            approvalState === "failed" && failedStep !== null
+              ? (["done", "done", "done", "done"].map((_, i) =>
+                  i < failedStep ? "done" : i === failedStep ? "failed" : "pending"
+                ) as StepStatus[])
+              : undefined;
+
+          return (
+            <ApprovalProgress
+              state={approvalState}
+              receipt={receipt}
+              stepStatuses={customStepStatuses}
+              error={approvalError}
+              errorVariant={approvalState === "rejected-by-user" ? "warning" : "error"}
+            />
+          );
+        })()}
 
         {(() => {
           if (approvalState === "confirmed" || request?.status === "CONFIRMED") {

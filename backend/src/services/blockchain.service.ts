@@ -150,7 +150,7 @@ export class BlockchainService {
   static async isNotaryAuthorized(walletAddress: string): Promise<boolean> {
     try {
       const contract = getNotaryContract()
-      return contract.isNotary(walletAddress)
+      return await contract.isNotary(walletAddress)
     } catch (err: unknown) {
       BlockchainService._rethrowInfraError(err)
       throw err

@@ -35,6 +35,14 @@ export const FULL_NOTARY_ABI = [
   'function notarize(bytes32 documentHash, string calldata ipfsCid, address owner) external',
   'function addNotary(address notary) external',
   'function removeNotary(address notary) external',
+  'error NotContractOwner(address caller)',
+  'error NotAuthorizedNotary(address caller)',
+  'error DocumentAlreadyNotarized(bytes32 documentHash)',
+  'error DocumentNotFound(bytes32 documentHash)',
+  'error InvalidHash()',
+  'error InvalidAddress()',
+  'error NotaryAlreadyAuthorized(address notary)',
+  'error NotaryNotFound(address notary)',
 ]
 
 // ─── Deployment file loader ──────────────────────────────────────────────────
