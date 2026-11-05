@@ -26,6 +26,7 @@
  */
 
 import { Types } from 'mongoose'
+import { ethers } from 'ethers'
 import { Notarization, INotarization } from '../models/Notarization'
 import { DocumentModel } from '../models/Document'
 import { User } from '../models/User'
@@ -496,9 +497,21 @@ export class NotarizationService {
     }
 
     // Method and arguments matching DocumentNotary.sol notarize(bytes32,string,address)
-    const bytes32Hash = `0x${doc.sha256Hash}`
-    const ipfsCid     = doc.ipfsCid || ''
-    const args        = [bytes32Hash, ipfsCid, owner.walletAddress]
+    // bytes32Hash: 0x + 64 hex chars (SHA-256 as bytes32)
+    // ownerChecksummed: EIP-55 checksummed address so ethers ABI encoder accepts it
+    const bytes32Hash        = `0x${doc.sha256Hash}`
+    const ipfsCid            = doc.ipfsCid || ''
+    const ownerChecksummed   = ethers.getAddress(owner.walletAddress)   // throws if invalid
+
+    // Sanity-check: reject zero-hash or zero-address before the frontend even tries
+    if (bytes32Hash === '0x' + '0'.repeat(64)) {
+      throw new ApiError(422, 'INVALID_HASH', 'Document hash is zero — cannot notarize.')
+    }
+    if (ownerChecksummed === ethers.ZeroAddress) {
+      throw new ApiError(400, 'OWNER_WALLET_REQUIRED', 'Owner wallet address is the zero address.')
+    }
+
+    const args = [bytes32Hash, ipfsCid, ownerChecksummed]
 
     return {
       success:         true,

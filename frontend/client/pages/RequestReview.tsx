@@ -236,6 +236,25 @@ export default function RequestReview() {
       const [documentHash, ipfsCid, ownerAddress] = approveRes.args;
 
       const { ethers } = await import("ethers");
+
+      // Validate args before sending to avoid silent on-chain reverts
+      if (!documentHash || documentHash === "0x" + "0".repeat(64)) {
+        throw new Error("Invalid document hash: cannot be zero bytes32.");
+      }
+      if (!ownerAddress || ownerAddress === ethers.ZeroAddress) {
+        throw new Error(
+          "Document owner has no wallet linked. The owner must link a MetaMask wallet before this document can be notarized."
+        );
+      }
+
+      // Normalize to checksummed address (Solidity address type requires valid address)
+      let checksummedOwner: string;
+      try {
+        checksummedOwner = ethers.getAddress(ownerAddress);
+      } catch {
+        throw new Error(`Invalid owner wallet address: ${ownerAddress}`);
+      }
+
       const fullAbi =
         Array.isArray(approveRes.abi) &&
         approveRes.abi.some((item) => typeof item === "string" && item.includes("notarize("))
@@ -248,8 +267,67 @@ export default function RequestReview() {
       const data = iface.encodeFunctionData(approveRes.method || "notarize", [
         documentHash,
         ipfsCid ?? "",
-        ownerAddress,
+        checksummedOwner,
       ]);
+
+      // Pre-flight simulation via eth_call to catch contract reverts before spending gas
+      try {
+        await ethereum.request({
+          method: "eth_call",
+          params: [
+            {
+              from: activeAccount,
+              to: approveRes.contractAddress,
+              data,
+            },
+            "latest",
+          ],
+        });
+      } catch (simErr: unknown) {
+        const simMsg =
+          simErr instanceof Error ? simErr.message : String(simErr);
+        if (simMsg.includes("NotAuthorizedNotary") || simMsg.includes("0x")) {
+          throw new Error(
+            "Smart contract rejected the transaction: your wallet is not authorized as a notary on-chain. Re-deploy the contract and ensure this wallet address is added via addNotary()."
+          );
+        }
+        if (simMsg.includes("DocumentAlreadyNotarized")) {
+          throw new Error(
+            "This document hash has already been notarized on-chain."
+          );
+        }
+        if (simMsg.includes("InvalidHash")) {
+          throw new Error("Invalid document hash passed to the contract.");
+        }
+        if (simMsg.includes("InvalidAddress")) {
+          throw new Error(
+            "Invalid owner address. The document owner must link a valid wallet."
+          );
+        }
+        // For other simulation errors, surface them directly
+        throw new Error(`Transaction would fail: ${simMsg}`);
+      }
+
+      // Estimate gas explicitly so MetaMask uses a safe limit
+      let gasEstimate = "0x30d40"; // 200_000 fallback
+      try {
+        const estimatedHex: string = await ethereum.request({
+          method: "eth_estimateGas",
+          params: [
+            {
+              from: activeAccount,
+              to: approveRes.contractAddress,
+              data,
+            },
+          ],
+        });
+        // Add 20% buffer on top of estimate
+        const estimated = BigInt(estimatedHex);
+        const buffered = (estimated * 120n) / 100n;
+        gasEstimate = "0x" + buffered.toString(16);
+      } catch {
+        // Keep fallback gas limit
+      }
 
       const txHash: string = await ethereum.request({
         method: "eth_sendTransaction",
@@ -258,6 +336,7 @@ export default function RequestReview() {
             from: activeAccount,
             to: approveRes.contractAddress,
             data,
+            gas: gasEstimate,
           },
         ],
       });
@@ -298,14 +377,25 @@ export default function RequestReview() {
             setRequest((prev) => (prev ? { ...prev, status: "CONFIRMED" } : prev));
             confirmed = true;
           }
-        } catch {
-          // keep polling
+        } catch (pollErr: unknown) {
+          const pollMsg = pollErr instanceof Error ? pollErr.message : String(pollErr);
+          // If backend confirmed the tx was reverted, stop polling and show a clear error
+          if (pollMsg.includes("TX_REVERTED") || pollMsg.includes("VERIFICATION_FAILED")) {
+            setApprovalState("failed");
+            setApprovalError(
+              "Transaction was reverted on-chain. The smart contract rejected the notarization — ensure your wallet is authorized as a notary and the document has not already been notarized."
+            );
+            return;
+          }
+          // Otherwise keep polling (network hiccup, tx still pending, etc.)
         }
       }
 
       if (!confirmed) {
         setApprovalState("failed");
-        setApprovalError("Transaction timed out. Check your wallet for status.");
+        setApprovalError(
+          "Transaction timed out. Check that your Hardhat node is running and try again."
+        );
       }
     } catch (err: unknown) {
       const errObj = err as { code?: string; status?: number; message?: string };
