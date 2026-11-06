@@ -264,22 +264,12 @@ export default function RequestReview() {
       const provider = new ethers.BrowserProvider(ethereum);
       const signer = await provider.getSigner();
 
-      // Check current on-chain pending nonce to prevent MetaMask nonce desync with local node
-      const txOptions: Record<string, any> = {};
-      try {
-        const nonce = await provider.getTransactionCount(activeAccount, "pending");
-        txOptions.nonce = nonce;
-      } catch (nonceErr) {
-        console.warn("Could not fetch on-chain nonce:", nonceErr);
-      }
-
       const contract = new ethers.Contract(approveRes.contractAddress, fullAbi, signer);
 
       const tx = await contract.notarize(
         documentHash,
         ipfsCid ?? "",
-        checksummedOwner,
-        txOptions
+        checksummedOwner
       );
 
       currentStep = 2;
@@ -345,6 +335,14 @@ export default function RequestReview() {
       const errAny = err as any;
       let message = "Approval failed";
 
+      const innerMessage =
+        errAny?.info?.error?.data?.message ||
+        errAny?.info?.error?.message ||
+        errAny?.error?.data?.message ||
+        errAny?.error?.message ||
+        errAny?.data?.message ||
+        errAny?.cause?.message;
+
       if (errAny?.revert?.name) {
         if (errAny.revert.name === "NotAuthorizedNotary") {
           message = "Your wallet is not authorized as a notary on-chain. Please ensure your wallet was added via addNotary().";
@@ -355,13 +353,13 @@ export default function RequestReview() {
         } else {
           message = `Smart contract reverted: ${errAny.revert.name}`;
         }
+      } else if (innerMessage && typeof innerMessage === "string" && !innerMessage.includes("could not coalesce")) {
+        message = innerMessage;
       } else if (errAny?.reason) {
         message = errAny.reason;
-      } else if (errAny?.shortMessage) {
+      } else if (errAny?.shortMessage && errAny.shortMessage !== "could not coalesce error") {
         message = errAny.shortMessage;
-      } else if (errAny?.info?.error?.message) {
-        message = errAny.info.error.message;
-      } else if (err instanceof Error) {
+      } else if (err instanceof Error && !err.message.includes("could not coalesce error")) {
         message = err.message;
       }
 
@@ -376,18 +374,21 @@ export default function RequestReview() {
         return;
       }
 
-      if (message.toLowerCase().includes("user rejected") || message.toLowerCase().includes("denied")) {
+      const lower = (message + " " + (errAny?.message || "")).toLowerCase();
+
+      if (lower.includes("user rejected") || lower.includes("denied")) {
         setApprovalState("rejected-by-user");
         setApprovalError("Transaction was rejected in MetaMask.");
       } else if (
-        message.toLowerCase().includes("nonce too high") ||
-        message.toLowerCase().includes("nonce too low") ||
-        message.toLowerCase().includes("replacement transaction underpriced")
+        lower.includes("nonce") ||
+        lower.includes("coalesce") ||
+        lower.includes("-32603") ||
+        lower.includes("internal json-rpc error")
       ) {
         setApprovalState("failed");
         setFailedStep(1);
         setApprovalError(
-          "MetaMask nonce is out of sync with Hardhat. In MetaMask, go to Settings > Advanced > Clear activity tab data (Reset account) and try again."
+          "MetaMask transaction failed (local node state desync). In MetaMask, go to Settings > Advanced > Clear activity tab data (Reset account), then try again."
         );
       } else {
         setApprovalState("failed");
